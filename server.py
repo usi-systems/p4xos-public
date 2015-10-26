@@ -35,7 +35,7 @@ def main():
 
     print 'Socket bind complete'
      
-    packer = struct.Struct('>' + 'b h b b 4s')
+    packer = struct.Struct('>' + 'b h b b 3s')
     #now keep talking with the client
     while 1:
         # receive data from client (data, addr)

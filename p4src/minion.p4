@@ -3,7 +3,7 @@
 
 #define NUM_INST 16
 #define ROUND_SZ 8
-#define VALUE_SZ 32
+#define VALUE_SZ 24 
 
 
 header_type ingress_metadata_t {

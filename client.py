@@ -15,7 +15,7 @@ def main():
     parser.add_argument('--inst', type=int, default=1)
     parser.add_argument('--rnd', type=int, default=1)
     parser.add_argument('--vrnd', type=int, default=1)
-    parser.add_argument('--value', default='Ciao')
+    parser.add_argument('--value', default='yea')
     args = parser.parse_args()
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -26,7 +26,7 @@ def main():
         sys.exit()
 
     values = (args.typ, args.inst, args.rnd, args.vrnd, args.value)
-    packer = struct.Struct('>' + 'b h b b 4s')
+    packer = struct.Struct('>' + 'b h b b 3s')
     packed_data = packer.pack(*values)
     try:
         print 'Original values:', values
