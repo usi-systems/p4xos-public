@@ -8,7 +8,7 @@ import binascii
 multicast_group = '224.3.29.71'
 HOST = ''   # Symbolic name meaning all available interfaces
 PORT = 34952 # Arbitrary non-privileged port
- 
+
 # Datagram (udp) socket
 def main():
     try :
@@ -34,8 +34,8 @@ def main():
         sys.exit()
 
     print 'Socket bind complete'
-     
-    packer = struct.Struct('>' + 'b h b b 3s')
+    fmt = '>' + 'b h b b 3s'
+    packer = struct.Struct(fmt)
     #now keep talking with the client
     while 1:
         # receive data from client (data, addr)
@@ -44,15 +44,16 @@ def main():
         addr = d[1]
 
         print 'received "%s"' % binascii.hexlify(data)
-        
-        unpacked_data = packer.unpack(data)
+        packed_size = struct.calcsize(fmt)
+        unpacked_data = packer.unpack(data[:packed_size])
         print 'unpacked:', unpacked_data
+        remaining_payload = data[packed_size:]
          
         if not data: 
             break
          
-        typ, inst, rnd, vrnd,  msg = unpacked_data 
-        print 'Message[%s:%d] - %d, %d, %d, %d, %s' % (addr[0], addr[1], typ, inst, rnd, vrnd, msg)
+        typ, inst, rnd, vrnd, value = unpacked_data
+        print 'Message[%s:%d] - | %d, %d, %d, %d, %s | %s' % (addr[0], addr[1], typ, inst, rnd, vrnd, value, remaining_payload)
          
     s.close()
 

@@ -20,13 +20,14 @@ def main():
     parser.add_argument('--dst', default='224.3.29.71')
     parser.add_argument('--itf', default='eth0')
     parser.add_argument('--typ', type=int, default=1)
+    parser.add_argument('--inst', type=int, default=0)
     parser.add_argument('--rnd', type=int, default=1)
     parser.add_argument('--vrnd', type=int, default=1)
     parser.add_argument('--value', default='val')
     args = parser.parse_args()
 
     msg = "P4 says NetPaxos"
-    p = make_paxos(args.typ, 10, args.dst, args.rnd, args.vrnd, args.value)
+    p = make_paxos(args.typ, args.inst, args.dst, args.rnd, args.vrnd, args.value)
     sendp(p, iface = args.itf)
     print p.show2()
     # print msg
