@@ -33,17 +33,32 @@ From mininet prompt
 mininet> xterm h1 h2
 ```
 
-Run receiver on h1
+You can either run UDP server or packet sniffer on h1
+
+## UDP socket server
+
+Run server on h1
+
+```
+./route-add.sh
+./server.py
+```
+
+## Scapy - packet sniffer
+
+Run packet sniffer on h1
 
 ```
 ./receive.py eth0
 ```
 
+## Scapy - packet generator
+
 Run sender on h2
 
 ```
-e.g,
-./send.py --itf eth0 --dst 10.0.0.1
+./route-add.sh
+./send.py --itf eth0 --dst 224.3.29.71
 
 usage: send.py [-h] [--dst DST] [--itf ITF] [--typ TYP] [--rnd RND]
                [--vrnd VRND] [--value VALUE]
