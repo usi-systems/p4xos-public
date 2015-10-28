@@ -5,7 +5,6 @@
     #include "openflow.p4"
 #endif /* OPENFLOW_ENABLE */
 #include "minion.p4"
-#include "includes/routing_header.p4"
 
 header_type intrinsic_metadata_t {
     fields {
@@ -47,17 +46,6 @@ table smac {
 }
 
 action forward(port) {
-    /*
-    ipv4.totalLen is the byte size of IP packet (IP header + UDP header + UDP payload)
-    To obtain the total length of UDP packet we need to subtract the IP header length, which is ipv4.ihl * 4 [bytes]
-    */
-    modify_field(routing_metadata.ipv4Length, ipv4.ihl);
-    add_to_field(routing_metadata.ipv4Length, ipv4.ihl);
-    add_to_field(routing_metadata.ipv4Length, ipv4.ihl);
-    add_to_field(routing_metadata.ipv4Length, ipv4.ihl);
-    modify_field(routing_metadata.udpLength, ipv4.totalLen);
-    subtract_from_field(routing_metadata.udpLength, routing_metadata.ipv4Length);
-
     modify_field(standard_metadata.egress_spec, port);
 }
 
@@ -104,7 +92,7 @@ control ingress {
                 apply(round_tbl);
                 if (swmem.round <= paxos.round) {
                     apply(accept_tbl);
-                } else apply(drop_tbl);
+                } else apply(drop_tbl); /* deprecated prepare/promise */
             }
 #ifdef OPENFLOW_ENABLE
         }

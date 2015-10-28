@@ -1,9 +1,4 @@
-// Template headers.p4 file for minion
-// Edit this file as needed for your P4 program
-
-// Here's an ethernet header to get started.
-
-#include "routing_header.p4"
+// headers.p4 file for p4paxos
 
 header_type ethernet_t {
     fields {
@@ -79,7 +74,6 @@ field_list udp_checksum_list {
     ipv4.dstAddr;
     8'0;
     ipv4.protocol;
-    //routing_metadata.udpLength;
     udp.length_;
     udp.srcPort;
     udp.dstPort;
