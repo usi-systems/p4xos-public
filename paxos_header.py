@@ -8,5 +8,5 @@ class Paxos(Packet):
         ShortField('instance', 1),
         XByteField('round', 1),
         XByteField('vround', 1),
-        StrFixedLenField('value', 'CIAO', 4)
+        StrFixedLenField('value', 'VAL', 3)
     ]

@@ -72,6 +72,8 @@ header_type udp_t {
 
 header udp_t udp;
 
+/*
+
 field_list udp_checksum_list {
     ipv4.srcAddr;
     ipv4.dstAddr;
@@ -97,6 +99,7 @@ calculated_field udp.checksum {
     update udp_checksum if (valid(udp));
 }
 
+*/
 
 header_type paxos_t {
     fields {
