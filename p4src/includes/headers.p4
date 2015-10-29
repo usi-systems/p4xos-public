@@ -67,7 +67,6 @@ header_type udp_t {
 
 header udp_t udp;
 
-/*
 
 field_list udp_checksum_list {
     ipv4.srcAddr;
@@ -77,6 +76,7 @@ field_list udp_checksum_list {
     udp.length_;
     udp.srcPort;
     udp.dstPort;
+    udp.length_;
     payload;
 }
 
@@ -93,7 +93,6 @@ calculated_field udp.checksum {
     update udp_checksum if (valid(udp));
 }
 
-*/
 
 header_type paxos_t {
     fields {
