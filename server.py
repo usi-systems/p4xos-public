@@ -1,61 +1,49 @@
-#!/usr/bin/python
- 
-import socket
-import sys
+#!/usr/bin/env python
+"""Paxos ProposerServer"""
+__author__ = "Tu Dang"
+
+from twisted.internet.protocol import DatagramProtocol
+from twisted.internet import reactor
+import ConfigParser
+import argparse
 import struct
 import binascii
- 
-multicast_group = '224.3.29.71'
-HOST = ''   # Symbolic name meaning all available interfaces
-PORT = 34952 # Arbitrary non-privileged port
 
-# Datagram (udp) socket
-def main():
-    try :
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        print 'Socket created'
-    except socket.error, msg :
-        print 'Failed to create socket. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
-        sys.exit()
-     
-    # Bind socket to local host and port
-    try:
-        s.bind((HOST, PORT))
-    except socket.error , msg:
-        print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
-        sys.exit()
-         
-    try:
-        group = socket.inet_aton(multicast_group)
-        mreq  = struct.pack('4sL', group, socket.INADDR_ANY)
-        s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-    except socket.error , msg:
-        print 'Multicast . Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
-        sys.exit()
+class LearnerServer(DatagramProtocol):
+    """docstring for LearnerServer"""
+    def __init__(self, config, nid):
+        self.config = config
+        self.majority = self.config.getint('common', 'majority')
 
-    print 'Socket bind complete'
-    fmt = '>' + 'b h b b 3s'
-    packer = struct.Struct(fmt)
-    #now keep talking with the client
-    while 1:
-        # receive data from client (data, addr)
-        d = s.recvfrom(1024)
-        data = d[0]
-        addr = d[1]
+    def startProtocol(self):
+        """
+        Called after protocol has started listening.
+        """
+        self.transport.joinGroup(self.config.get('learner', 'addr'))
 
-        print 'received "%s"' % binascii.hexlify(data)
+    def parseDatagram(self, datagram):
+        fmt = '>' + 'b h b b 3s'
+        packer = struct.Struct(fmt)
         packed_size = struct.calcsize(fmt)
-        unpacked_data = packer.unpack(data[:packed_size])
-        print 'unpacked:', unpacked_data
-        remaining_payload = data[packed_size:]
-         
-        if not data: 
-            break
-         
+        unpacked_data = packer.unpack(datagram[:packed_size])
+        remaining_payload = datagram[packed_size:]
         typ, inst, rnd, vrnd, value = unpacked_data
-        print 'Message[%s:%d] - | %d, %d, %d, %d, %s | %s' % (addr[0], addr[1], typ, inst, rnd, vrnd, value, remaining_payload)
-         
-    s.close()
+        return(unpacked_data, remaining_payload)
+        
+    def datagramReceived(self, datagram, address):
+        unpacked_data, remaining_payload  = self.parseDatagram(datagram)
+        typ, inst, rnd, vrnd, value = unpacked_data
+        print 'Message[%s:%d] - | %d, %d, %d, %d, %s | %s' % (address[0], address[1], 
+                typ, inst, rnd, vrnd, value, remaining_payload)
+
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--nid', type=int, required=True, help="Learner's ID")
+    args = parser.parse_args()
+
+    config = ConfigParser.ConfigParser()
+    config.read('paxos.cfg')
+    reactor.listenMulticast(config.getint('learner', 'port'), LearnerServer(config, args.nid),
+        listenMultiple=True)
+    reactor.run()

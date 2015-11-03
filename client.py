@@ -1,15 +1,43 @@
-#!/usr/bin/python
-import socket
-import sys
+#!/usr/bin/env python
+"""Paxos Client"""
+__author__ = "Tu Dang"
+
+from twisted.internet.protocol import DatagramProtocol
+from twisted.internet import reactor
+import argparse
+import ConfigParser
+import random
+import string
 import struct
 import binascii
-import argparse
- 
-multicast_group = ('224.3.29.71', 34952)
 
-def main():
+class Client(DatagramProtocol):
+
+    def __init__(self, config, args):
+        self.config = config
+        self.args = args
+        self.dst = (config.get('learner', 'addr'), config.getint('learner', 'port'))
+
+
+    def startProtocol(self):
+        """
+        Called after protocol has started listening.
+        """
+        values = (args.typ, args.inst, args.rnd, args.vrnd, args.value)
+        packer = struct.Struct('>' + 'b h b b 3s')
+        packed_data = packer.pack(*values)
+        print 'Original values:', values
+        print 'Format string  :', packer.format
+        print 'Uses           :', packer.size, 'bytes'
+        print 'Packed Value   :', binascii.hexlify(packed_data)
+        self.transport.write(packed_data, self.dst)
+
+    def datagramReceived(self, datagram, address):
+        print datagram
+
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate Paxos messages.')
-    parser.add_argument('--dst', default='10.0.0.1')
     parser.add_argument('--itf', default='eth0')
     parser.add_argument('--typ', type=int, default=1)
     parser.add_argument('--inst', type=int, default=1)
@@ -17,31 +45,9 @@ def main():
     parser.add_argument('--vrnd', type=int, default=1)
     parser.add_argument('--value', default='yea')
     args = parser.parse_args()
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ttl = struct.pack('b', 1)
-        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-    except socket.error:
-        print 'Failed to create socket'
-        sys.exit()
 
-    values = (args.typ, args.inst, args.rnd, args.vrnd, args.value)
-    packer = struct.Struct('>' + 'b h b b 3s')
-    packed_data = packer.pack(*values)
-    try:
-        print 'Original values:', values
-        print 'Format string  :', packer.format
-        print 'Uses           :', packer.size, 'bytes'
-        print 'Packed Value   :', binascii.hexlify(packed_data)
-        s.sendto(packed_data, multicast_group)
-         
-    except socket.error, msg:
-        print 'Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
-        sys.exit()
-
-    finally:
-        print >>sys.stderr, 'closing socket'
-        s.close()
-
-if __name__ == '__main__':
-    main()
+    config = ConfigParser.ConfigParser()
+    config.read('paxos.cfg')
+    reactor.listenUDP(config.getint('client', 'port'), Client(config, args))
+    reactor.callLater(1, reactor.stop)
+    reactor.run()
