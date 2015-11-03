@@ -46,7 +46,7 @@ action read_round() {
 
 // Recieve Paxos 1A message, send Paxos 1B message
 action handle_1a() {
-    modify_field(paxos.type, PAXOS_1B);                                            // Create a 1B message
+    modify_field(paxos.msgtype, PAXOS_1B);                                         // Create a 1B message
     register_read(paxos_packet_metadata.vround, vrounds_register, paxos.instance); // paxos_packet_metadata.vround = vrounds_register[paxos.instance]
     register_read(paxos_packet_metadata.value, values_register, paxos.instance);   // paxos_packet_metadata.value  = values_register[paxos.instance]
     register_write(rounds_register, paxos.instance, paxos.round);                  // rounds_register[paxos.instance] = paxos.round
@@ -56,7 +56,7 @@ action handle_1a() {
 
 // Recieve Paxos 2A message, send Paxos 2B message
 action handle_2a() {
-    modify_field(paxos.type, PAXOS_2B);				                  // Create a 2B message
+    modify_field(paxos.msgtype, PAXOS_2B);				          // Create a 2B message
     register_write(rounds_register, paxos.instance, paxos.round);                 // rounds_register[paxos.instance] = paxos.round
     register_write(vrounds_register, paxos.instance, paxos.round);                // vrounds_register[paxos.instance] = paxos.round
     register_write(values_register, paxos.instance, paxos.value);                 // values_register[paxos.instance] = paxos.value
@@ -67,6 +67,6 @@ table round_tbl {
 }
 
 table acceptor_tbl {
-    reads   { paxos.type : exact; }
+    reads   { paxos.msgtype : exact; }
     actions { handle_1a; handle_2a; _drop; }
 }
