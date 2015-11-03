@@ -1,10 +1,5 @@
-//uncomment to enable openflow
-//#define OPENFLOW_ENABLE
 
-#ifdef OPENFLOW_ENABLE
-    #include "openflow.p4"
-#endif /* OPENFLOW_ENABLE */
-#include "minion.p4"
+#include "paxos_acceptor.p4"
 
 header_type intrinsic_metadata_t {
     fields {
@@ -15,15 +10,14 @@ header_type intrinsic_metadata_t {
     }
 }
 
-
 metadata intrinsic_metadata_t intrinsic_metadata;
-
 
 action _drop() {
     drop();
 }
 
 action _nop() {
+
 }
 
 #define MAC_LEARN_RECEIVER 1024
@@ -60,10 +54,6 @@ table dmac {
     actions {
         forward;
         broadcast;
-#ifdef OPENFLOW_ENABLE
-        openflow_apply;
-        openflow_miss;
-#endif /* OPENFLOW_ENABLE */
     }
     size : 512;
 }
@@ -82,24 +72,15 @@ table drop_tbl {
 }
 
 control ingress {
-#ifdef OPENFLOW_ENABLE
-    apply(packet_out) {
-        nop {
-#endif /* OPENFLOW_ENABLE */
-            apply(smac);
-            apply(dmac);
-            if (valid(paxos)) {
-                apply(round_tbl);
-                if (swmem.round <= paxos.round) {
-                    apply(accept_tbl);
-                } else apply(drop_tbl); /* deprecated prepare/promise */
-            }
-#ifdef OPENFLOW_ENABLE
-        }
-    }
-
-    process_ofpat_ingress ();
-#endif /* OPENFLOW_ENABLE */
+    apply(smac);                 /* l2 learning switch logic */
+    apply(dmac);
+                                 /* TODO(check if we can split out control */
+    if (valid(paxos)) {          /* check if we have a paxos packet */
+        apply(round_tbl);
+        if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
+            apply(acceptor_tbl);
+         } else apply(drop_tbl); /* deprecated prepare/promise */
+     }
 }
 
 control egress {
@@ -107,7 +88,4 @@ control egress {
         apply(mcast_src_pruning);
     }
 
-#ifdef OPENFLOW_ENABLE
-    process_ofpat_egress();
-#endif /*OPENFLOW_ENABLE */
 }

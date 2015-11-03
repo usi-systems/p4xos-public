@@ -1,4 +1,4 @@
-// headers.p4 file for p4paxos
+// standard headers
 
 header_type ethernet_t {
     fields {
@@ -94,14 +94,3 @@ calculated_field udp.checksum {
 }
 
 
-header_type paxos_t {
-    fields {
-        pxtype : 8;
-        instance : 16;
-        round : 8;
-        vround : 8;
-        value : 24;
-    }
-}
-
-header paxos_t paxos;

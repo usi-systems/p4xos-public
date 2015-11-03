@@ -1,5 +1,4 @@
-// Template parser.p4 file for minion
-// Edit this file as needed for your P4 program
+// Parser for ethernet, ipv4, and udp headers
 
 parser start {
     return parse_ethernet;
@@ -33,7 +32,3 @@ parser parse_udp {
     }
 }
 
-parser parse_paxos {
-    extract(paxos);
-    return ingress;
-}
