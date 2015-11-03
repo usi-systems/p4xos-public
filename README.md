@@ -11,6 +11,11 @@ make
 
 # Demo
 
+Change to the **scripts** directory,
+```
+cd scripts
+```
+
 Create P4 virtual interfaces
 ```
 sudo ~/p4factory/tools/veth_setup.sh
@@ -33,9 +38,11 @@ From mininet prompt
 mininet> xterm h1 h2
 ```
 
-You can either run UDP server or packet sniffer on h1
+You can either run UDP server or packet sniffer on h1.
+The UDP server listens on the port and joins the multicast group 
+specified in the config file **paxos.cfg**
 
-## UDP socket server
+## UDP server
 
 Run server on h1
 
@@ -52,25 +59,22 @@ Run packet sniffer on h1
 ./receive.py eth0
 ```
 
-## Scapy - packet generator
+## UDP Client
 
-Run sender on h2
+Run client on h2
 
 ```
 ./route-add.sh
-./send.py --itf eth0 --dst 224.3.29.71
-
-usage: send.py [-h] [--dst DST] [--itf ITF] [--typ TYP] [--rnd RND]
-               [--vrnd VRND] [--value VALUE]
+./client.py
+usage: client.py [-h] [--typ TYP] [--inst INST] [--rnd RND] [--vrnd VRND]
+                 [--value VALUE]
 
 Generate Paxos messages.
 
 optional arguments:
   -h, --help     show this help message and exit
-  --dst DST
-  --itf ITF
   --typ TYP
+  --inst INST
   --rnd RND
   --vrnd VRND
   --value VALUE
-```

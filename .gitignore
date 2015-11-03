@@ -1,6 +1,6 @@
 behavioral-model
 build/
-dump.pcap
+*.pcap
 l1.hdl
 mgrp.hdl
 tests/
