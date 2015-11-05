@@ -22,17 +22,21 @@ from mininet.topo import Topo
 from mininet.log import setLogLevel, info
 from mininet.cli import CLI
 from mininet.node import Switch, Host
-from mininet.link import Intf
 
 from p4_mininet import P4Switch
 
 import argparse
 from time import sleep
+import subprocess
+import shlex
+
 parser = argparse.ArgumentParser(description='Mininet demo')
 parser.add_argument('--behavioral-exe', help='Path to behavioral executable',
                     type=str, action="store", required=True)
-parser.add_argument('--thrift-port', help='Thrift server port for table updates',
+parser.add_argument('--thrift-port', help='the thrift-port for the first switch',
                     type=int, action="store", default=22222)
+parser.add_argument('--num-switches', help='Number of switches in the topo',
+                    type=int, action="store", default=1)
 parser.add_argument('--num-hosts', help='Number of hosts to connect to switch',
                     type=int, action="store", default=2)
 
@@ -43,11 +47,11 @@ class P4Host(Host):
     def config(self, **params):
         r = super(Host, self).config(**params)
 
-        self.defaultIntf().rename("eth0")
 
-        for off in ["rx", "tx", "sg"]:
-            cmd = "/sbin/ethtool --offload eth0 %s off" % off
-            self.cmd(cmd)
+        for itf in self.intfList():
+            for off in ["rx", "tx", "sg"]:
+                cmd = "/sbin/ethtool --offload %s %s off" % (itf, off)
+                self.cmd(cmd)
 
         # disable IPv6
         self.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
@@ -68,64 +72,65 @@ class P4Host(Host):
 
 class NetPaxosTopo(Topo):
     "Multiple switches connected in tree topo"
-    def __init__(self, sw_path, thrift_port, n, **opts):
+    def __init__(self, sw_path, thrift_port, n, ns, **opts):
         # Initialize topology and default options
         Topo.__init__(self, **opts)
 
         switches = []
-        for i in range (n):
+        for i in range (ns):
             switch = self.addSwitch('s{0}'.format(i+1),
                                 sw_path = sw_path,
-                                thrift_port = thrift_port,
+                                thrift_port = thrift_port + i,
                                 pcap_dump = True)
             switches.append(switch)
 
         for h in range(1, n+1):
             host = self.addHost('h%d' % h,
 				ip = '10.0.0.%d' % h,
-                                mac = '00:04:00:00:00:%02x' %h)
+                                mac = '00:00:00:00:00:%02x' %h)
             for i, switch in enumerate(switches):
                 self.addLink(host, switch, intfName1='eth{0}'.format(i+1),
                             params1={'ip': '10.0.{0}.{1}/8'.format(i+1, h)})
 
-class SingleTopo(Topo):
-    "Multiple switches connected in tree topo"
-    def __init__(self, sw_path, thrift_port, n, **opts):
-        # Initialize topology and default options
-        Topo.__init__(self, **opts)
-
-        switch = self.addSwitch('s1',
-                                sw_path = sw_path,
-                                thrift_port = thrift_port,
-                                pcap_dump = True)
-
-        for h in range(1,n+1):
-            host = self.addHost('h%d' % h)
-            self.addLink(host, switch)
+def populate_tables(sw_port, entry):
+    P4_PATH = '/home/vagrant/p4factory'
+    CLI_PATH = P4_PATH + '/cli/pd_cli.py'
+    PROG = 'paxos_l2_control'
+    TEST_UTILS = '../tests/pd_thrift:%s/testutils' % P4_PATH
+    cmd = '{0} -p {1} -i p4_pd_rpc.{1} -s {2} -c localhost:{3} -m "{4}"'.format(CLI_PATH,
+            PROG, TEST_UTILS, sw_port, entry)
+    try:
+        output = subprocess.check_output(['echo', cmd])
+        print output
+    except subprocess.CalledProcessError as e:
+        print e
+        print e.output 
 
 def main():
     num_hosts = args.num_hosts
+    num_switches = args.num_switches
 
-    #topo = NetPaxosTopo(args.behavioral_exe,
-    topo = SingleTopo(args.behavioral_exe,
-                            args.thrift_port,
-                            num_hosts
-    )
+    topo = NetPaxosTopo( args.behavioral_exe, args.thrift_port,
+                            num_hosts, num_switches )
     net = Mininet(topo = topo,
                   host = P4Host,
                   switch = P4Switch,
                   controller = None )
-    s1 = net.get('s1')
-    Intf('eth0', node=s1)
-    net.start()
 
+    net.start()
 
     sw_mac = ["00:aa:bb:00:00:%02x" % n for n in xrange(num_hosts)]
 
+    sleep(2)
     for n in xrange(num_hosts):
         h = net.get('h%d' % (n + 1))
         h.describe()
 
+    for i in xrange(num_switches):
+        with open("commands.txt", "r") as f:
+            for line in f:
+                line = line.strip()
+                populate_tables(args.thrift_port+i, line)
 
     print "Ready !"
 

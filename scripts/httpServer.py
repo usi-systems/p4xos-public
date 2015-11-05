@@ -13,7 +13,7 @@ class MainPage(Resource):
       return Resource.getChild(self, name, request)
 
   def render_GET(self, request):
-    f = open('index.html', 'r')
+    f = open('../web/index.html', 'r')
     return f.read()  
 
 class PaxosServer(Resource):

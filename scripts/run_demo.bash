@@ -1,1 +1,1 @@
-sudo python ./l2_demo.py --num-hosts 3 --behavioral-exe ../behavioral-model
+sudo python ./paxos_demo.py --num-hosts 3 --num-switches 2 --behavioral-exe ../behavioral-model
