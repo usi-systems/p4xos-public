@@ -22,7 +22,7 @@ P4C_BM_SCRIPT=$P4C_BM_PATH/p4c_bm/__main__.py
 
 SWITCH_PATH=$BMV2_PATH/targets/simple_switch/simple_switch
 
-CLI_PATH=$BMV2_PATH/tools/runtime_CLI.py
+CLI_PATH=$BMV2_PATH/targets/simple_switch/sswitch_CLI
 
 $P4C_BM_SCRIPT p4src/paxos_l2_control.p4 --json paxos_l2_control.json 
 sudo PYTHONPATH=$PYTHONPATH:$BMV2_PATH/mininet/ python topo.py \
