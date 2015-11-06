@@ -1,0 +1,22 @@
+digraph G {
+    rankdir = TB;
+    subgraph {
+        s1[shape=box];
+        s2[shape=box];
+        s3[shape=box];
+        s4[shape=box];
+        edge[dir=none];
+        {rank = source; h1 -> s1; }
+            s1 -> s2;
+            s1 -> s3;
+            s1 -> s4;
+        {rank = same; s2; s3; s4}
+            s2 -> h2; 
+            s2 -> h3; 
+            s3 -> h2; 
+            s3 -> h3; 
+            s4 -> h2; 
+            s4 -> h3; 
+        {rank = same; h2; h3 }
+    }
+}

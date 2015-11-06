@@ -6,9 +6,5 @@ table_add acceptor_tbl handle_1a 1 =>
 table_add acceptor_tbl handle_2a 3 =>
 table_add mcast_src_pruning _drop 5 =>
 mc_mgrp_create 1
-mc_node_create 0 1
-mc_node_create 1 2
-mc_node_create 2 3
+mc_node_create 0 1 2 3 4
 mc_node_associate 1 0
-mc_node_associate 1 1
-mc_node_associate 1 2
