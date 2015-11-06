@@ -2,12 +2,13 @@ table_set_default smac mac_learn
 table_set_default dmac broadcast
 table_set_default mcast_src_pruning _nop
 table_set_default round_tbl read_round
-table_set_default acceptor_tbl _drop
 table_add acceptor_tbl handle_1a 1 =>
 table_add acceptor_tbl handle_2a 3 =>
 table_add mcast_src_pruning _drop 5 =>
 mc_mgrp_create 1
 mc_node_create 0 1
 mc_node_create 1 2
+mc_node_create 2 3
 mc_node_associate 1 0
 mc_node_associate 1 1
+mc_node_associate 1 2
