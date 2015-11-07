@@ -33,7 +33,9 @@ _THRIFT_BASE_PORT = 22222
 parser = argparse.ArgumentParser(description='Mininet demo')
 parser.add_argument('--behavioral-exe', help='Path to behavioral executable',
                     type=str, action="store", required=True)
-parser.add_argument('--json', help='Path to JSON config file',
+parser.add_argument('--acceptor', help='Path to acceptor JSON config file',
+                    type=str, action="store", required=True)
+parser.add_argument('--coordinator', help='Path to coordinator JSON config file',
                     type=str, action="store", required=True)
 parser.add_argument('--cli', help='Path to BM CLI',
                     type=str, action="store", required=True)
@@ -41,57 +43,53 @@ parser.add_argument('--cli', help='Path to BM CLI',
 args = parser.parse_args()
 
 class MyTopo(Topo):
-    def __init__(self, sw_path, json_path, nb_hosts, nb_switches, links, **opts):
+    def __init__(self, sw_path, acceptor, coordinator,  **opts):
         # Initialize topology and default options
         Topo.__init__(self, **opts)
 
-        for i in xrange(nb_switches):
-            switch = self.addSwitch('s%d' % (i + 1),
+        s1 = self.addSwitch('s1',
+                      sw_path = args.behavioral_exe,
+                      json_path = coordinator,
+                      thrift_port = _THRIFT_BASE_PORT + 1,
+                      pcap_dump = False,
+                      device_id = 1)
+
+        h1 = self.addHost('h1')
+        h4 = self.addHost('h4')
+        self.addLink(h1, s1)
+        self.addLink(h4, s1)
+        switches = []
+        hosts = []
+        for i in [2, 3, 4]:
+            switches.append(self.addSwitch('s%d' % (i),
                                     sw_path = sw_path,
-                                    json_path = json_path,
+                                    json_path = acceptor,
                                     thrift_port = _THRIFT_BASE_PORT + i,
                                     pcap_dump = False,
-                                    device_id = i)
+                                    device_id = i))
         
-        for h in xrange(nb_hosts):
-            host = self.addHost('h%d' % (h + 1))
+        for h in [2,3]:
+            hosts.append(self.addHost('h%d' % (h)))
 
-        for a, b in links:
-            self.addLink(a, b)
+        for s in switches:
+            for h in hosts:
+                self.addLink(h, s)
+            self.addLink(s, s1)
 
-def read_topo():
-    nb_hosts = 0
-    nb_switches = 0
-    links = []
-    with open("topo.txt", "r") as f:
-        line = f.readline()[:-1]
-        w, nb_switches = line.split()
-        assert(w == "switches")
-        line = f.readline()[:-1]
-        w, nb_hosts = line.split()
-        assert(w == "hosts")
-        for line in f:
-            if not f: break
-            a, b = line.split()
-            links.append( (a, b) )
-    return int(nb_hosts), int(nb_switches), links
-            
 
 def main():
-    nb_hosts, nb_switches, links = read_topo()
-
     topo = MyTopo(args.behavioral_exe,
-                  args.json,
-                  nb_hosts, nb_switches, links)
+                  args.acceptor, args.coordinator)
 
     net = Mininet(topo = topo,
                   host = P4Host,
                   switch = P4Switch,
                   controller = None )
+
     net.start()
 
-    for n in xrange(nb_hosts):
-        h = net.get('h%d' % (n + 1))
+    for n in [2, 3, 4]: 
+        h = net.get('h%d' % n)
         for off in ["rx", "tx", "sg"]:
             cmd = "/sbin/ethtool --offload eth0 %s off" % off
             print cmd
@@ -105,8 +103,8 @@ def main():
 
     sleep(1)
 
-    for i in xrange(nb_switches):
-        cmd = [args.cli, args.json, str(_THRIFT_BASE_PORT + i)]
+    for i in [2, 3, 4]:
+        cmd = [args.cli, args.acceptor, str(_THRIFT_BASE_PORT + i)]
         with open("commands.txt", "r") as f:
             print " ".join(cmd)
             try:
@@ -116,6 +114,15 @@ def main():
                 print e
                 print e.output
 
+    cmd = [args.cli, args.coordinator, str(_THRIFT_BASE_PORT + 1)]
+    with open("sequence_commands.txt", "r") as f:
+        print " ".join(cmd)
+        try:
+            output = subprocess.check_output(cmd, stdin = f)
+            print output
+        except subprocess.CalledProcessError as e:
+            print e
+            print e.output
     sleep(1)
 
     print "Ready !"
