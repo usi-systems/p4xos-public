@@ -1,24 +1,12 @@
 # Build behavioral-model
-Required: p4factory
+Required: [p4-lang/behavioral-model](https://github.com/p4lang/behavioral-model) and [p4-lang/p4c-bm](https://github.com/p4lang/p4c-bm)
 
-```
-cd ~/
-cd p4factory/targets
-git clone --recursive https://github.com/usi-systems/p4paxos.git
-cd p4paxos.git 
-make
-```
 
 # Demo
 
-Change to the **scripts** directory,
+Change to the **bmv2** directory,
 ```
-cd scripts
-```
-
-Create P4 virtual interfaces
-```
-sudo ~/p4factory/tools/veth_setup.sh
+cd bmv2
 ```
 
 In another terminal, run demo
@@ -27,10 +15,6 @@ In another terminal, run demo
 sudo ./run_demo.sh
 ```
 
-Populate tables
-```
-./add_demo_entries.bash
-```
 
 From mininet prompt
 
@@ -38,33 +22,21 @@ From mininet prompt
 mininet> xterm h1 h2
 ```
 
-You can either run UDP server or packet sniffer on h1.
-The UDP server listens on the port and joins the multicast group 
-specified in the config file **paxos.cfg**
-
-## UDP server
-
-Run server on h1
-
-```
-./route-add.sh
-./server.py
-```
-
 ## Scapy - packet sniffer
 
-Run packet sniffer on h1
+Run packet sniffer on h2 (or h3)
 
 ```
-./receive.py eth0
+cd scripts/
+./receive.py
 ```
 
 ## UDP Client
 
-Run client on h2
+Run client on h1 (or h4)
 
 ```
-./route-add.sh
+cd scripts
 ./client.py
 usage: client.py [-h] [--typ TYP] [--inst INST] [--rnd RND] [--vrnd VRND]
                  [--value VALUE]
