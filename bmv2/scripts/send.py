@@ -1,10 +1,19 @@
 #!/usr/bin/python
 
 from scapy.all import *
-from paxos_header import *
 import argparse
 
 import sys
+
+class Paxos(Packet):
+    name = "Paxos"
+    fields_desc = [
+        XByteField('pxtype', 1),
+        ShortField('instance', 1),
+        XByteField('round', 1),
+        XByteField('vround', 1),
+        StrFixedLenField('value', 'VAL', 3)
+    ]
 
 def make_paxos(typ, i, ipv4_dst, rnd, vrnd, val):
     eth = Ether(src='00:04:00:00:00:01', dst='01:00:5e:03:1d:47')

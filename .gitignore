@@ -1,6 +1,8 @@
 behavioral-model
 build/
-*.pcap
-l1.hdl
-mgrp.hdl
 tests/
+*.pcap
+*.hdl
+*.json
+*.log
+

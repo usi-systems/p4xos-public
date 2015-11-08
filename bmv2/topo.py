@@ -88,7 +88,7 @@ def main():
 
     net.start()
 
-    for n in [2, 3, 4]: 
+    for n in [1, 2, 3, 4]: 
         h = net.get('h%d' % n)
         for off in ["rx", "tx", "sg"]:
             cmd = "/sbin/ethtool --offload eth0 %s off" % off
@@ -100,6 +100,8 @@ def main():
         h.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
         h.cmd("sysctl -w net.ipv4.tcp_congestion_control=reno")
         h.cmd("iptables -I OUTPUT -p icmp --icmp-type destination-unreachable -j DROP")
+        print "add mutlicast route"
+        h.cmd("route add -net 224.0.0.0 netmask 224.0.0.0 eth0")
 
     sleep(1)
 
@@ -115,7 +117,7 @@ def main():
                 print e.output
 
     cmd = [args.cli, args.coordinator, str(_THRIFT_BASE_PORT + 1)]
-    with open("sequence_commands.txt", "r") as f:
+    with open("serializer_commands.txt", "r") as f:
         print " ".join(cmd)
         try:
             output = subprocess.check_output(cmd, stdin = f)

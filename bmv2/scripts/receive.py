@@ -1,6 +1,5 @@
 #!/usr/bin/python
 from scapy.all import *
-from paxos_header import *
 
 import struct
 import sys
