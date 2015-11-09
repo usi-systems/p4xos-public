@@ -3,7 +3,7 @@
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
 
-#define INSTANCE_SIZE 16
+#define NUMBER_COUNT 65536 // 2^16 instances
 #define ROUND_SIZE 8
 #define VALUE_SIZE 24
 
@@ -24,17 +24,17 @@ metadata ingress_metadata_t paxos_packet_metadata;
 
 register rounds_register {
     width : ROUND_SIZE;
-    instance_count : INSTANCE_SIZE;
+    instance_count : NUMBER_COUNT;
 }
 
 register vrounds_register {
     width : ROUND_SIZE;
-    instance_count : INSTANCE_SIZE;
+    instance_count : NUMBER_COUNT;
 }
 
 register values_register {
     width : VALUE_SIZE;
-    instance_count : INSTANCE_SIZE;
+    instance_count : NUMBER_COUNT;
 }
 
 // Copying Paxos-fields from the register to meta-data structure. The index
