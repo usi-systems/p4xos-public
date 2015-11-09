@@ -38,7 +38,7 @@ class Client(DatagramProtocol):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate Paxos messages.')
-    parser.add_argument('--typ', type=int, default=1)
+    parser.add_argument('--typ', type=int, default=3)
     parser.add_argument('--inst', type=int, default=1)
     parser.add_argument('--rnd', type=int, default=1)
     parser.add_argument('--vrnd', type=int, default=1)

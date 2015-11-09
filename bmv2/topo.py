@@ -71,9 +71,11 @@ class MyTopo(Topo):
         for h in [2,3]:
             hosts.append(self.addHost('h%d' % (h)))
 
-        for s in switches:
-            for h in hosts:
-                self.addLink(h, s)
+        for i, s in enumerate(switches):
+            for j, h in enumerate(hosts):
+                self.addLink(h, s, intfName1='eth{0}'.format(i+1),
+                            params1={'ip': '10.0.{0}.{1}/8'.format(i+1, j+2)}
+                            )
             self.addLink(s, s1)
 
 
