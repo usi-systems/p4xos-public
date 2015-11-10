@@ -1,12 +1,17 @@
 // Headers for Paxos
 
+#define MSGTYPE_SIZE 8
+#define ROUND_SIZE 8
+#define INSTANCE_SIZE 16
+#define VALUE_SIZE 512
+
 header_type paxos_t {
     fields {
-        msgtype : 8;         // indicates the message type e.g., 1A, 1B, etc.
-        instance : 16;    // instance number
-        round : 8;        // round number
-        vround : 8;       // round in which an acceptor casted a vote
-        value : 24;       // the value the acceptor voted for
+        msgtype : MSGTYPE_SIZE;         // indicates the message type e.g., 1A, 1B, etc.
+        instance : INSTANCE_SIZE;    // instance number
+        round : ROUND_SIZE;        // round number
+        vround : ROUND_SIZE;       // round in which an acceptor casted a vote
+        value : VALUE_SIZE;       // the value the acceptor voted for
     }
 }
 

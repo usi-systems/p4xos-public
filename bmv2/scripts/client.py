@@ -11,6 +11,8 @@ import string
 import struct
 import binascii
 
+VALUE_SIZE = 64 
+
 class Client(DatagramProtocol):
 
     def __init__(self, config, args):
@@ -28,8 +30,10 @@ class Client(DatagramProtocol):
             self.sendPacket()
 
     def sendPacket(self):
-        values = (args.typ, args.inst, args.rnd, args.vrnd, args.value)
-        packer = struct.Struct('>' + 'B H B B 3s')
+        v = ''.join(random.SystemRandom().choice(string.ascii_uppercase + \
+                    string.digits) for _ in range(VALUE_SIZE))
+        values = (args.typ, args.inst, args.rnd, args.vrnd, v)
+        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
         packed_data = packer.pack(*values)
         print 'Original values:', values
         print 'Format string  :', packer.format

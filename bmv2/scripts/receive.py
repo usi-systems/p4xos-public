@@ -17,7 +17,7 @@ import ConfigParser
 logging.basicConfig(level=logging.DEBUG,
                     format='[%(levelname)s] (%(threadName)-10s) %(message)s',
                     )
-
+VALUE_SIZE = 64
 PHASE_2B = 4
 
 class Learner(object):
@@ -75,13 +75,13 @@ class Learner(object):
             if pkt['IP'].proto != 0x11:
                 return
             datagram = pkt['Raw'].load
-            fmt = '>' + 'B H B B 3s'
+            fmt = '>' + 'B H B B {0}s'.format(VALUE_SIZE)
             packer = struct.Struct(fmt)
             packed_size = struct.calcsize(fmt)
             unpacked_data = packer.unpack(datagram[:packed_size])
             remaining_payload = datagram[packed_size:]
             typ, inst, rnd, vrnd, value = unpacked_data
-            logging.debug("| %10s | %4d |  %02x | %02x | %04s | %s |" % \
+            logging.debug("| %10s | %4d |  %02x | %02x | %64s | %s |" % \
                     (paxos_type[typ], inst, rnd, vrnd, value, remaining_payload))
             if typ == PHASE_2B:
                 msg = self.PaxosMessage(itf, inst, rnd, vrnd, value)
