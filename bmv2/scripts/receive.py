@@ -12,6 +12,7 @@ from interfaces import all_interfaces
 from threading import Thread, Timer
 from math import ceil
 import logging
+import ConfigParser
 
 logging.basicConfig(level=logging.DEBUG,
                     format='[%(levelname)s] (%(threadName)-10s) %(message)s',
@@ -20,12 +21,13 @@ logging.basicConfig(level=logging.DEBUG,
 PHASE_2B = 4
 
 class Learner(object):
-    def __init__(self, itfs):
+    def __init__(self, itfs, config):
         self.logs = {}
         self.states = {}
         self.itfs = itfs
         self.threads = []
         self.majority = ceil((len(itfs) + 1) / 2)
+        self.config = config
 
 
     class LearnerState(object):
@@ -73,7 +75,7 @@ class Learner(object):
             if pkt['IP'].proto != 0x11:
                 return
             datagram = pkt['Raw'].load
-            fmt = '>' + 'b h b b 3s'
+            fmt = '>' + 'B H B B 3s'
             packer = struct.Struct(fmt)
             packed_size = struct.calcsize(fmt)
             unpacked_data = packer.unpack(datagram[:packed_size])
@@ -92,7 +94,9 @@ class Learner(object):
 
     def worker(self, itf):
         "thread worker function"
-        sniff(iface=itf, count=10, filter="udp && dst port 34952",
+        count = self.config.getint('instance', 'count')
+        t = self.config.getint('timeout', 'second')
+        sniff(iface=itf, count=count, timeout=t, filter="udp && dst port 34952",
               prn = lambda x: self.handle_pkt(x, itf))
         return
 
@@ -104,11 +108,20 @@ class Learner(object):
             self.threads.append(t)
             t.start()
 
+    def stop(self):
+        pass
+
 def main():
+    config = ConfigParser.ConfigParser()
+    config.read('paxos.cfg')
     itfs = all_interfaces()
     itf_names = zip(*itfs)[0]
-    learner = Learner(itf_names)
-    learner.start()
+    learner = Learner(itf_names, config)
+    try:
+        learner.start()
+    except (KeyboardInterrupt, SystemExit):
+        learner.stop()
+        sys.exit()
 
 if __name__ == '__main__':
     main()
