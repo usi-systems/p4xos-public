@@ -3,6 +3,7 @@ from scapy.all import *
 
 import struct
 import sys
+import os
 
 import socket
 import fcntl
@@ -19,6 +20,8 @@ logging.basicConfig(level=logging.DEBUG,
                     )
 VALUE_SIZE = 64
 PHASE_2B = 4
+
+THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class Learner(object):
     def __init__(self, itfs, config):
@@ -113,7 +116,7 @@ class Learner(object):
 
 def main():
     config = ConfigParser.ConfigParser()
-    config.read('paxos.cfg')
+    config.read('%s/paxos.cfg' % THIS_DIR)
     itfs = all_interfaces()
     itf_names = zip(*itfs)[0]
     learner = Learner(itf_names, config)

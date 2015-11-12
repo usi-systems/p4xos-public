@@ -10,8 +10,11 @@ import random
 import string
 import struct
 import binascii
+import os
 
 VALUE_SIZE = 64 
+
+THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class Client(DatagramProtocol):
 
@@ -55,7 +58,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = ConfigParser.ConfigParser()
-    config.read('paxos.cfg')
+    config.read('%s/paxos.cfg' % THIS_DIR)
     reactor.listenUDP(config.getint('client', 'port'), Client(config, args))
     timeout = config.getint('timeout', 'second')
     reactor.callLater(timeout, reactor.stop)

@@ -1,22 +1,20 @@
-# Build behavioral-model
-Required: [p4-lang/behavioral-model](https://github.com/p4lang/behavioral-model) and [p4-lang/p4c-bm](https://github.com/p4lang/p4c-bm)
+# Setup a Virtual Machine
+
+We provide a VM to run p4paxos demo here: [usi-systems/sdn-coure-vm](https://github.com/usi-systems/sdn-course-vm)
+
+Please follow the instruction to spin up a new virtual machine.
 
 
 # Demo
 
-Change to the **bmv2** directory,
+After connecting to the VM, change to the **bmv2** directory, and start the demo
+
 ```
 cd bmv2
-```
-
-In another terminal, run demo
-
-```
 sudo ./run_demo.sh
 ```
 
-
-From mininet prompt
+From the mininet prompt
 
 ```
 mininet> xterm h1 h2
@@ -27,8 +25,7 @@ mininet> xterm h1 h2
 Run packet sniffer on h2 (or h3)
 
 ```
-cd scripts/
-./receive.py
+./scripts/receive.py
 ```
 
 ## UDP Client
@@ -36,17 +33,19 @@ cd scripts/
 Run client on h1 (or h4)
 
 ```
-cd scripts
-./client.py
-usage: client.py [-h] [--typ TYP] [--inst INST] [--rnd RND] [--vrnd VRND]
-                 [--value VALUE]
+./scripts/client.py
+```
 
-Generate Paxos messages.
+## Config
 
-optional arguments:
-  -h, --help     show this help message and exit
-  --typ TYP
-  --inst INST
-  --rnd RND
-  --vrnd VRND
-  --value VALUE
+Default, The demo only lasts for 1 second, or after the servers receive 10 packets.
+
+You can change this by modifying the *count* variable in *instance* section or *second* variable in *timeout* section, in *bmv2/scripts/paxos.cfg* file.
+
+```
+[instance]
+count=10
+
+[timeout]
+second=1
+```
