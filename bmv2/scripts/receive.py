@@ -16,7 +16,7 @@ import logging
 import ConfigParser
 
 logging.basicConfig(level=logging.DEBUG,
-                    format='[%(levelname)s] (%(threadName)-10s) %(message)s',
+                    format='%(message)s',
                     )
 VALUE_SIZE = 64
 PHASE_2B = 4
@@ -71,7 +71,6 @@ class Learner(object):
                     self.states[msg.inst] = state
         return res
 
-
     def handle_pkt(self, pkt, itf):
         paxos_type = { 1: "prepare", 2: "promise", 3: "accept", 4: "accepted" }
         try:
@@ -90,7 +89,9 @@ class Learner(object):
                 msg = self.PaxosMessage(itf, inst, rnd, vrnd, value)
                 res = self.handle_accepted(msg)
                 if res is not None:
-                    logging.debug(res)
+                    res = '{0}, {1}'.format(res[0], res[1])
+                    h = IP(dst=pkt[IP].src)/UDP(sport=34952, dport=34953, chksum=0)
+                    send(h/res, verbose=False)
  
         except IndexError as ex:
             logging.error(ex)

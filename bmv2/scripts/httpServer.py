@@ -53,10 +53,11 @@ class PaxosServer(Resource):
     d.addCallback(self._delayedPut)
     return NOT_DONE_YET
 
-root = MainPage()
-server = PaxosServer()
-root.putChild('get', server)
-root.putChild('put', server)
-factory = Site(root)
-reactor.listenTCP(8080, factory)
-reactor.run()
+if __name__=='__main__':
+    root = MainPage()
+    server = PaxosServer()
+    root.putChild('get', server)
+    root.putChild('put', server)
+    factory = Site(root)
+    reactor.listenTCP(8080, factory)
+    reactor.run()
