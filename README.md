@@ -38,7 +38,7 @@ Run client on h1 (or h4)
 
 ## Config
 
-Default, The demo only lasts for 1 second, or after the servers receive 10 packets.
+Default, The demo only lasts for 5 seconds, or after the servers receive 10 packets.
 
 You can change this by modifying the *count* variable in *instance* section or *second* variable in *timeout* section, in *bmv2/scripts/paxos.cfg* file.
 
@@ -47,5 +47,5 @@ You can change this by modifying the *count* variable in *instance* section or *
 count=10
 
 [timeout]
-second=1
+second=5
 ```
