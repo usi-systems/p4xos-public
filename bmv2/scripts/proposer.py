@@ -18,13 +18,12 @@ PHASE_2A = 3
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class Proposer(object):
-    def __init__(self, config, conn):
+    def __init__(self, config, conn, proposer_id):
         self.config = config
         self.conn = conn
-        self.rnd = 0
+        self.rnd = proposer_id
 
     def submitRandomValue(self):
-        print "CALL"
         msg = ''.join(random.SystemRandom().choice(string.ascii_uppercase + \
                 string.digits) for _ in range(VALUE_SIZE))
         self.submit(msg)
@@ -36,7 +35,7 @@ class Proposer(object):
         self.conn.send(packed_data)
 
     def deliver(self, msg):
-        print msg
+        return msg
 
 
 class Pserver(DatagramProtocol):
@@ -65,7 +64,7 @@ if __name__ == '__main__':
     config = ConfigParser.ConfigParser()
     config.read('%s/paxos.cfg' % THIS_DIR)
     conn = Pserver(config)
-    proposer = Proposer(config, conn)
+    proposer = Proposer(config, conn, 0)
     conn.addDeliverHandler(proposer.deliver)
     reactor.listenUDP(config.getint('client', 'port'), conn)
     reactor.callLater(1,proposer.submitRandomValue)
