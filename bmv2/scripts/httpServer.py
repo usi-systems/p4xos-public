@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 
-from twisted.internet import reactor
+from twisted.internet import reactor, defer
 from twisted.internet.task import deferLater
 from twisted.web.resource import Resource
 from twisted.web.server import Site, NOT_DONE_YET
+import os
+import json
+THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class MainPage(Resource):
   def getChild(self, name, request):
@@ -13,49 +16,35 @@ class MainPage(Resource):
       return Resource.getChild(self, name, request)
 
   def render_GET(self, request):
-    f = open('../web/index.html', 'r')
+    f = open('%s/web/index.html' % THIS_DIR, 'r')
     return f.read()  
 
-class PaxosServer(Resource):
+class WebServer(Resource):
   isLeaf = True
 
-  def __init__(self):
+  def __init__(self, proposer):
     Resource.__init__(self)
-    self.db = {}
+    self.proposer = proposer
 
-  def _delayedGet(self, request):
-    k = request.args['key'][0].strip()
-    try:
-      v = self.db[k]
-      request.write("%s" % (v,))
-      request.finish()
-    except KeyError:
-      request.write("size %d. Key %s not found" % (len(self.db), k,))
-      request.finish()
-
-
-  def _delayedPut(self, request):
-    k = request.args['key'][0].strip()
-    v = request.args['value'][0].strip()
-    self.db[k] = v
-    for x in self.db.keys():
-      request.write("(%s, %s)\t" % (x, self.db.get(x)))
-    request.write("Stored successfully")
+  def _waitResponse(self, result, request):
+    request.write(result)
     request.finish()
 
   def render_GET(self, request):
-    d = deferLater(reactor, 1, lambda: request)
-    d.addCallback(self._delayedGet)
+    data = json.dumps(request.args)
+    d = self.proposer.submit(data)
+    d.addCallback(self._waitResponse, request)
     return NOT_DONE_YET
 
   def render_POST(self, request):
-    d = deferLater(reactor, 0.001, lambda: request)
-    d.addCallback(self._delayedPut)
+    data = json.dumps(request.args)
+    d = self.proposer.submit(data)
+    d.addCallback(self._waitResponse, request)
     return NOT_DONE_YET
 
 if __name__=='__main__':
     root = MainPage()
-    server = PaxosServer()
+    server = WebServer()
     root.putChild('get', server)
     root.putChild('put', server)
     factory = Site(root)

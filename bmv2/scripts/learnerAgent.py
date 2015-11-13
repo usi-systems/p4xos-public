@@ -38,22 +38,22 @@ class LServer(object):
             if pkt['IP'].proto != 0x11:
                 return
             datagram = pkt['Raw'].load
-            fmt = '>' + 'B H B B {0}s'.format(VALUE_SIZE)
+            fmt = '>' + 'B H B B B {0}s'.format(VALUE_SIZE - 1)
             packer = struct.Struct(fmt)
             packed_size = struct.calcsize(fmt)
             unpacked_data = packer.unpack(datagram[:packed_size])
-            remaining_payload = datagram[packed_size:]
-            typ, inst, rnd, vrnd, value = unpacked_data
-            logging.debug("| %10s | %4d |  %02x | %02x | %64s | %s |" % \
-                    (paxos_type[typ], inst, rnd, vrnd, value, remaining_payload))
+            typ, inst, rnd, vrnd, req_id, value = unpacked_data
+            logging.debug("| %10s | %4d |  %02x | %02x | %d | %64s |" % \
+                    (paxos_type[typ], inst, rnd, vrnd, req_id, value))
             if typ == PHASE_2B:
                 msg = PaxosMessage(itf, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
-                    res = '{0}, {1}'.format(res[0], res[1])
+                    packer = struct.Struct('>' + 'B {0}s'.format(VALUE_SIZE))
+                    packed_data = packer.pack(*(req_id, res[1]))
                     pkt_header = IP(dst=pkt[IP].src)/UDP(sport=pkt[UDP].dport,
                                     dport=pkt[UDP].sport)
-                    send(pkt_header/res, verbose=False)
+                    send(pkt_header/packed_data, verbose=False)
  
         except IndexError as ex:
             logging.error(ex)

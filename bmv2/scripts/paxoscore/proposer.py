@@ -13,6 +13,7 @@ class Proposer(object):
     def __init__(self, conn, proposer_id):
         self.conn = conn
         self.rnd = proposer_id
+        self.req_id = 0
 
     def submitRandomValue(self):
         msg = ''.join(random.SystemRandom().choice(string.ascii_uppercase + \
@@ -20,11 +21,11 @@ class Proposer(object):
         self.submit(msg)
 
     def submit(self, msg):
-        values = (PHASE_2A, 0, self.rnd, self.rnd, msg)
-        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
+        self.req_id += 1
+        values = (PHASE_2A, 0, self.rnd, self.rnd, self.req_id, msg)
+        packer = struct.Struct('>' + 'B H B B B {0}s'.format(VALUE_SIZE-1))
         packed_data = packer.pack(*values)
-        self.conn.send(packed_data)
+        return self.conn.send(self.req_id, packed_data)
 
     def deliver(self, msg):
-        print msg
         return msg
