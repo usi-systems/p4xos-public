@@ -19,9 +19,7 @@ sys.path.append(THIS_DIR)
 
 from paxoscore.learner import Learner, PaxosMessage
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(message)s',
-                    )
+logging.basicConfig(level=logging.DEBUG,format='%(message)s')
 VALUE_SIZE = 64
 PHASE_2B = 4
 
@@ -53,7 +51,8 @@ class LServer(object):
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
                     res = '{0}, {1}'.format(res[0], res[1])
-                    pkt_header = IP(dst=pkt[IP].src)/UDP(sport=pkt[UDP].dport, dport=pkt[UDP].sport, chksum=0)
+                    pkt_header = IP(dst=pkt[IP].src)/UDP(sport=pkt[UDP].dport,
+                                    dport=pkt[UDP].sport)
                     send(pkt_header/res, verbose=False)
  
         except IndexError as ex:
@@ -63,8 +62,15 @@ class LServer(object):
         "thread worker function"
         count = self.config.getint('instance', 'count')
         t = self.config.getint('timeout', 'second')
-        sniff(iface=itf, count=count, timeout=t, filter="udp && dst port 34952",
-              prn = lambda x: self.handle_pkt(x, itf))
+        try:
+            if t > 0:
+                sniff(iface=itf, count=count, timeout=t, filter="udp && dst port 34952",
+                  prn = lambda x: self.handle_pkt(x, itf))
+            else:
+                sniff(iface=itf, count=count, filter="udp && dst port 34952",
+                  prn = lambda x: self.handle_pkt(x, itf))
+        except Exception as e:
+            logging.error('{0}, interface {1}'.format(e, itf))
         return
 
     def start(self):
