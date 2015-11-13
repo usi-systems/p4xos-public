@@ -22,18 +22,18 @@ mininet> xterm h1 h2
 
 ## Scapy - packet sniffer
 
-Run packet sniffer on h2 (or h3)
+Run learner agent on h2 (or h3)
 
 ```
-./scripts/receive.py
+./scripts/learnerAgent.py --cfg scripts/paxos.cfg
 ```
 
 ## UDP Client
 
-Run client on h1 (or h4)
+Run proposer agent on h1 (or h4)
 
 ```
-./scripts/client.py
+./scripts/proposerAgent.py --cfg scripts/paxos.cfg
 ```
 
 ## Config
