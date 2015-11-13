@@ -78,14 +78,15 @@ register instance_register {
 //  This function read num_inst stored in the register and copy it to
 //  the current packet. Then it increased the num_inst by 1, and write
 //  it back to the register
-action increase_sequence() {
+action handle_2a() {
     register_read(paxos.instance, instance_register, 0);
     add_to_field(paxos.instance, 1);
     register_write(instance_register, 0, paxos.instance);
 }
 
 table sequence_tbl {
-    actions { increase_sequence; }
+    reads   { paxos.msgtype : exact; }
+    actions { handle_2a; _nop; }
     size : 1;
 }
 
