@@ -38,9 +38,10 @@ Run proposer agent on h1 (or h4)
 
 ## Config
 
-Default, The demo only lasts for 5 seconds, or after the servers receive 10 packets.
+By default, the demo only lasts for 5 seconds, or after the learner receives 10 Paxos messages.
 
-You can change this by modifying the *count* variable in *instance* section or *second* variable in *timeout* section, in *bmv2/scripts/paxos.cfg* file.
+You can change this by modifying the *count* variable in the *instance* section or *second* variable in *timeout* section of the *bmv2/scripts/paxos.cfg* configuration file.
+If timeout is set to 0, the learner will exit after receiving 10 Paxos messages.
 
 ```
 [instance]
