@@ -4,13 +4,12 @@ __author__ = "Tu Dang"
 
 import string
 import struct
-import os
+import random
 
-THIS_DIR=os.path.dirname(os.path.realpath(__file__))
+VALUE_SIZE = 64
 
 class Proposer(object):
-    def __init__(self, config, conn, proposer_id):
-        self.config = config
+    def __init__(self, conn, proposer_id):
         self.conn = conn
         self.rnd = proposer_id
 
@@ -20,7 +19,8 @@ class Proposer(object):
         self.submit(msg)
 
     def submit(self, msg):
-        self.conn.send(msg)
+        self.conn.send(self.rnd, msg)
 
     def deliver(self, msg):
+        print msg
         return msg

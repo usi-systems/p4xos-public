@@ -1,14 +1,6 @@
 #!/usr/bin/python
 
-import struct
-import sys
-import os
-
 from math import ceil
-VALUE_SIZE = 64
-PHASE_2B = 4
-
-THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class PaxosMessage(object):
     def __init__(self, nid, inst, crnd, vrnd, value):
