@@ -20,7 +20,7 @@ From the mininet prompt
 mininet> xterm h1 h2
 ```
 
-## Scapy - packet sniffer
+## Paxos Learner
 
 Run learner agent on h2 (or h3)
 
@@ -28,7 +28,7 @@ Run learner agent on h2 (or h3)
 ./scripts/learnerAgent.py --cfg scripts/paxos.cfg
 ```
 
-## UDP Client
+## Paxos Proposer
 
 Run proposer agent on h1 (or h4)
 
