@@ -5,8 +5,6 @@ import struct
 import sys
 import os
 
-import socket
-import fcntl
 import struct
 import array
 from interfaces import all_interfaces
@@ -14,6 +12,7 @@ from threading import Thread, Timer
 from math import ceil
 import logging
 import ConfigParser
+from paxoscore.learner import Learner, PaxosMessage
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(message)s',
@@ -23,53 +22,12 @@ PHASE_2B = 4
 
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
-class Learner(object):
-    def __init__(self, itfs, config):
-        self.logs = {}
-        self.states = {}
+class LServer(object):
+    def __init__(self, learner, config, itfs):
+        self.learner = learner
+        self.config = config
         self.itfs = itfs
         self.threads = []
-        self.majority = ceil((len(itfs) + 1) / 2)
-        self.config = config
-
-
-    class LearnerState(object):
-        def __init__(self, crnd):
-            self.crnd = crnd
-            self.nids = set()
-            self.val = None
-            self.finished = False
-
-    class PaxosMessage(object):
-        def __init__(self, nid, inst, crnd, vrnd, value):
-            self.nid = nid
-            self.inst = inst
-            self.crnd = crnd
-            self.vrnd = vrnd
-            self.val = value
-
-    def handle_accepted(self, msg):
-        res = None
-        state = self.states.get(msg.inst)
-        if state is None:
-            state = self.LearnerState(msg.crnd)
-
-        if not state.finished:
-            if state.crnd < msg.crnd:
-                state = LearnerState(msg.crnd)
-            if state.crnd == msg.crnd:
-                if msg.nid not in state.nids:
-                    state.nids.add(msg.nid)
-                    if state.val is None:
-                        state.val = msg.val
-
-                    if len(state.nids) >= self.majority:
-                        state.finished = True
-                        self.logs[msg.inst] = state.val
-                        res = (msg.inst, state.val)
-
-                    self.states[msg.inst] = state
-        return res
 
     def handle_pkt(self, pkt, itf):
         paxos_type = { 1: "prepare", 2: "promise", 3: "accept", 4: "accepted" }
@@ -86,8 +44,8 @@ class Learner(object):
             logging.debug("| %10s | %4d |  %02x | %02x | %64s | %s |" % \
                     (paxos_type[typ], inst, rnd, vrnd, value, remaining_payload))
             if typ == PHASE_2B:
-                msg = self.PaxosMessage(itf, inst, rnd, vrnd, value)
-                res = self.handle_accepted(msg)
+                msg = PaxosMessage(itf, inst, rnd, vrnd, value)
+                res = self.learner.handle_p2b(msg)
                 if res is not None:
                     res = '{0}, {1}'.format(res[0], res[1])
                     h = IP(dst=pkt[IP].src)/UDP(sport=34952, dport=34953, chksum=0)
@@ -120,11 +78,12 @@ def main():
     config.read('%s/paxos.cfg' % THIS_DIR)
     itfs = all_interfaces()
     itf_names = zip(*itfs)[0]
-    learner = Learner(itf_names, config)
+    learner = Learner(config, len(itf_names))
+    lserver = LServer(learner, config, itf_names)
     try:
-        learner.start()
+        lserver.start()
     except (KeyboardInterrupt, SystemExit):
-        learner.stop()
+        lserver.stop()
         sys.exit()
 
 if __name__ == '__main__':

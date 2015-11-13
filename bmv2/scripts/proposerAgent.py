@@ -11,6 +11,7 @@ import string
 import struct
 import binascii
 import os
+from paxoscore.proposer import Proposer
 
 VALUE_SIZE = 64 
 PHASE_2A = 3
@@ -29,12 +30,10 @@ class Proposer(object):
         self.submit(msg)
 
     def submit(self, msg):
-        values = (PHASE_2A, 0, self.rnd, self.rnd, msg)
-        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
-        packed_data = packer.pack(*values)
-        self.conn.send(packed_data)
+        self.conn.send(self.rnd, msg)
 
     def deliver(self, msg):
+        print msg
         return msg
 
 
@@ -50,7 +49,10 @@ class Pserver(DatagramProtocol):
         """
         pass
 
-    def send(self, packed_data):
+    def send(self, rnd, msg):
+        values = (PHASE_2A, 0, rnd, rnd, msg)
+        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
+        packed_data = packer.pack(*values)
         self.transport.write(packed_data, self.dst)
 
     def addDeliverHandler(self, deliver):
