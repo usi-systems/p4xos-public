@@ -2,15 +2,15 @@
 
 We provide a VM to run p4paxos demo here: [usi-systems/sdn-coure-vm](https://github.com/usi-systems/sdn-course-vm)
 
-Please follow the instruction to spin up a new virtual machine.
+Please follow theses [instructions](https://github.com/usi-systems/sdn-course-vm/blob/master/README.md) to create a new virtual machine.
 
 
 # Demo
 
-After connecting to the VM, change to the **bmv2** directory, and start the demo
+After connecting to the VM, change to the **p4paxos/bmv2** directory, and start the demo
 
 ```
-cd bmv2
+cd p4paxos/bmv2
 sudo ./run_demo.sh
 ```
 
