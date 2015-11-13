@@ -7,6 +7,7 @@ import struct
 import random
 
 VALUE_SIZE = 64
+PHASE_2A = 3
 
 class Proposer(object):
     def __init__(self, conn, proposer_id):
@@ -19,7 +20,10 @@ class Proposer(object):
         self.submit(msg)
 
     def submit(self, msg):
-        self.conn.send(self.rnd, msg)
+        values = (PHASE_2A, 0, self.rnd, self.rnd, msg)
+        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
+        packed_data = packer.pack(*values)
+        self.conn.send(packed_data)
 
     def deliver(self, msg):
         print msg

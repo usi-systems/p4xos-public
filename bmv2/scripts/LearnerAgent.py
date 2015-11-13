@@ -12,6 +12,11 @@ from threading import Thread, Timer
 from math import ceil
 import logging
 import ConfigParser
+import argparse
+
+THIS_DIR=os.path.dirname(os.path.realpath(__file__))
+sys.path.append(THIS_DIR)
+
 from paxoscore.learner import Learner, PaxosMessage
 
 logging.basicConfig(level=logging.DEBUG,
@@ -48,8 +53,8 @@ class LServer(object):
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
                     res = '{0}, {1}'.format(res[0], res[1])
-                    h = IP(dst=pkt[IP].src)/UDP(sport=34952, dport=34953, chksum=0)
-                    send(h/res, verbose=False)
+                    pkt_header = IP(dst=pkt[IP].src)/UDP(sport=pkt[UDP].dport, dport=pkt[UDP].sport, chksum=0)
+                    send(pkt_header/res, verbose=False)
  
         except IndexError as ex:
             logging.error(ex)
@@ -74,8 +79,11 @@ class LServer(object):
         pass
 
 def main():
+    parser = argparse.ArgumentParser(description='Paxos Proposer.')
+    parser.add_argument('--cfg', required=True)
+    args = parser.parse_args()
     config = ConfigParser.ConfigParser()
-    config.read('%s/paxos.cfg' % THIS_DIR)
+    config.read(args.cfg)
     itfs = all_interfaces()
     itf_names = zip(*itfs)[0]
     learner = Learner(config, len(itf_names))

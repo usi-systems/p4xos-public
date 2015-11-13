@@ -27,6 +27,8 @@ class Learner(object):
 
 
     def handle_p2b(self, msg):
+        """handle 2a message and return decision if existing a majority.
+        Otherwise return None"""
         res = None
         state = self.states.get(msg.inst)
         if state is None:

@@ -6,18 +6,12 @@ from twisted.internet.protocol import DatagramProtocol
 from twisted.internet import reactor
 import argparse
 import ConfigParser
-import random
-import string
-import struct
-import binascii
+import sys
 import os
-from paxoscore.proposer import Proposer
-
-VALUE_SIZE = 64 
-PHASE_2A = 3
-
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
+sys.path.append(THIS_DIR)
 
+from paxoscore.proposer import Proposer
 
 class Pserver(DatagramProtocol):
 
@@ -31,11 +25,8 @@ class Pserver(DatagramProtocol):
         """
         pass
 
-    def send(self, rnd, msg):
-        values = (PHASE_2A, 0, rnd, rnd, msg)
-        packer = struct.Struct('>' + 'B H B B {0}s'.format(VALUE_SIZE))
-        packed_data = packer.pack(*values)
-        self.transport.write(packed_data, self.dst)
+    def send(self, msg):
+        self.transport.write(msg, self.dst)
 
     def addDeliverHandler(self, deliver):
         self.deliver = deliver
@@ -45,8 +36,11 @@ class Pserver(DatagramProtocol):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Paxos Proposer.')
+    parser.add_argument('--cfg', required=True)
+    args = parser.parse_args()
     config = ConfigParser.ConfigParser()
-    config.read('%s/paxos.cfg' % THIS_DIR)
+    config.read(args.cfg)
     conn = Pserver(config)
     proposer = Proposer(conn, 0)
     conn.addDeliverHandler(proposer.deliver)
