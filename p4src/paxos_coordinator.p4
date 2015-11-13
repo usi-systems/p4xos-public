@@ -3,7 +3,6 @@
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
 
-// TODO: increment sequence (instance) number, and broadcast packets
 
 header_type intrinsic_metadata_t {
     fields {
@@ -70,14 +69,6 @@ table mcast_src_pruning {
     size : 1;
 }
 
-#define INSTANCE_SIZE 16
-header_type ingress_metadata_t {
-    fields {
-        instance : INSTANCE_SIZE;
-    }
-}
-
-header ingress_metadata_t paxos_packet_metadata;
 
 register instance_register {
     width : INSTANCE_SIZE;
@@ -88,10 +79,9 @@ register instance_register {
 //  the current packet. Then it increased the num_inst by 1, and write
 //  it back to the register
 action increase_sequence() {
-    register_read(paxos_packet_metadata.instance, instance_register, 0);
-    modify_field(paxos.instance, paxos_packet_metadata.instance);       
-    add_to_field(paxos_packet_metadata.instance, 1);
-    register_write(instance_register, 0, paxos_packet_metadata.instance);
+    register_read(paxos.instance, instance_register, 0);
+    add_to_field(paxos.instance, 1);
+    register_write(instance_register, 0, paxos.instance);
 }
 
 table sequence_tbl {

@@ -13,8 +13,6 @@
 header_type ingress_metadata_t {
     fields {
         round : ROUND_SIZE;
-        vround : ROUND_SIZE;
-        value : VALUE_SIZE;
     }
 }
 
@@ -44,12 +42,10 @@ action read_round() {
 
 // Recieve Paxos 1A message, send Paxos 1B message
 action handle_1a() {
-    modify_field(paxos.msgtype, PAXOS_1B);                                         // Create a 1B message
-    register_read(paxos_packet_metadata.vround, vrounds_register, paxos.instance); // paxos_packet_metadata.vround = vrounds_register[paxos.instance]
-    register_read(paxos_packet_metadata.value, values_register, paxos.instance);   // paxos_packet_metadata.value  = values_register[paxos.instance]
-    register_write(rounds_register, paxos.instance, paxos.round);                  // rounds_register[paxos.instance] = paxos.round
-    modify_field(paxos.vround, paxos_packet_metadata.vround);                      // paxos.vround = paxos_packet_metadata.vround
-    modify_field(paxos.value, paxos_packet_metadata.value);                        // paxos.value = paxos_packet_metadata.value
+    modify_field(paxos.msgtype, PAXOS_1B);                                        // Create a 1B message
+    register_read(paxos.vround, vrounds_register, paxos.instance);                // paxos.vround = vrounds_register[paxos.instance]
+    register_read(paxos.value, values_register, paxos.instance);                  // paxos.value  = values_register[paxos.instance]
+    register_write(rounds_register, paxos.instance, paxos.round);                 // rounds_register[paxos.instance] = paxos.round
 }
 
 // Recieve Paxos 2A message, send Paxos 2B message
