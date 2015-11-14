@@ -47,15 +47,18 @@ mininet> h2 kill %python
 
 ## Config
 
-By default, the demo only lasts for 5 seconds, or after the learner receives 10 Paxos messages.
-
-You can change this by modifying the *count* variable in the *instance* section or *second* variable in *timeout* section of the *bmv2/scripts/paxos.cfg* configuration file.
-If timeout is set to 0, the learner will exit after receiving 10 Paxos messages.
+In *bmv2/scripts/paxos.cfg* configuration file:
 
 ```
 [instance]
-count=10
+count=65536
 
 [timeout]
-second=5
+second=0
 ```
+
+* The *count* variable in the *instance* section: configures the maximum 
+number of requests that learners will handle.
+
+* The *second* variable in *timeout* section: configures the number of seconds
+that the learners will stay alive. If timeout is set to 0, the learners forever.
