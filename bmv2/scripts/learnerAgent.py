@@ -8,11 +8,14 @@ import os
 import struct
 import array
 from interfaces import all_interfaces
-from threading import Thread, Timer
+from threading import Thread, Timer, Condition
 from math import ceil
 import logging
 import ConfigParser
 import argparse
+import json
+import binascii
+from twisted.internet import defer
 
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 sys.path.append(THIS_DIR)
@@ -31,6 +34,36 @@ class LServer(object):
         self.config = config
         self.itfs = itfs
         self.threads = []
+        self.current = 1
+        self.cond = Condition()
+        self.db = {}
+
+    def respond(self, result, req_id, dst, sport, dport):
+        packer = struct.Struct('>' + 'B {0}s'.format(VALUE_SIZE))
+        packed_data = packer.pack(*(req_id, str(result)))
+        pkt_header = IP(dst=dst)/UDP(sport=sport, dport=dport)
+        send(pkt_header/packed_data, verbose=False)
+
+    def execute(self, inst, cmd, d):
+        with self.cond:
+            while inst > self.current:
+                self.cond.wait()
+            if cmd['action'] == 'put':
+                k = cmd['key'][0]
+                v = cmd['value'][0]
+                self.db[k] = v
+                self.current += 1
+                self.cond.notifyAll()
+                d.callback("Success")
+            if cmd['action'] == 'get':
+                k = cmd['key'][0]
+                self.current += 1
+                self.cond.notifyAll()
+                try:
+                    v = self.db.get(k)
+                    d.callback(v)
+                except KeyError as ex:
+                    d.callback("None")
 
     def handle_pkt(self, pkt, itf):
         paxos_type = { 1: "prepare", 2: "promise", 3: "accept", 4: "accepted" }
@@ -43,17 +76,20 @@ class LServer(object):
             packed_size = struct.calcsize(fmt)
             unpacked_data = packer.unpack(datagram[:packed_size])
             typ, inst, rnd, vrnd, req_id, value = unpacked_data
+            value = value.rstrip('\t\r\n\0')
             logging.debug("| %10s | %4d |  %02x | %02x | %d | %64s |" % \
                     (paxos_type[typ], inst, rnd, vrnd, req_id, value))
             if typ == PHASE_2B:
                 msg = PaxosMessage(itf, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
-                    packer = struct.Struct('>' + 'B {0}s'.format(VALUE_SIZE))
-                    packed_data = packer.pack(*(req_id, res[1]))
-                    pkt_header = IP(dst=pkt[IP].src)/UDP(sport=pkt[UDP].dport,
-                                    dport=pkt[UDP].sport)
-                    send(pkt_header/packed_data, verbose=False)
+                    inst, cmd = res
+                    inst = int(inst)
+                    cmd  = json.loads(cmd)
+                    d = defer.Deferred()
+                    d.addCallback(self.respond, req_id, pkt[IP].src,
+                                    pkt[UDP].dport, pkt[UDP].sport)
+                    self.execute(inst, cmd, d)
  
         except IndexError as ex:
             logging.error(ex)
@@ -70,7 +106,7 @@ class LServer(object):
                 sniff(iface=itf, count=count, filter="udp && dst port 34952",
                   prn = lambda x: self.handle_pkt(x, itf))
         except Exception as e:
-            logging.error('{0}, interface {1}'.format(e, itf))
+            logging.exception('{0}, interface {1}'.format(e, itf))
         return
 
     def start(self):

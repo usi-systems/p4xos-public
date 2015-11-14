@@ -31,12 +31,14 @@ class WebServer(Resource):
     request.finish()
 
   def render_GET(self, request):
+    request.args['action'] = 'get'
     data = json.dumps(request.args)
     d = self.proposer.submit(data)
     d.addCallback(self._waitResponse, request)
     return NOT_DONE_YET
 
   def render_POST(self, request):
+    request.args['action'] = 'put'
     data = json.dumps(request.args)
     d = self.proposer.submit(data)
     d.addCallback(self._waitResponse, request)
