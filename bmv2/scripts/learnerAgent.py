@@ -54,16 +54,16 @@ class LServer(object):
                 self.db[k] = v
                 self.current += 1
                 self.cond.notifyAll()
-                d.callback("Success")
+                d.callback("Success\n")
             if cmd['action'] == 'get':
                 k = cmd['key'][0]
                 self.current += 1
                 self.cond.notifyAll()
                 try:
                     v = self.db.get(k)
-                    d.callback(v)
+                    d.callback('%s\n' % v)
                 except KeyError as ex:
-                    d.callback("None")
+                    d.callback("None\n")
 
     def handle_pkt(self, pkt, itf):
         paxos_type = { 1: "prepare", 2: "promise", 3: "accept", 4: "accepted" }

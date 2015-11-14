@@ -105,7 +105,7 @@ def main():
         print "add mutlicast route"
         h.cmd("route add -net 224.0.0.0 netmask 224.0.0.0 eth0")
 
-    sleep(1)
+    sleep(2)
 
     for i in [2, 3, 4]:
         cmd = [args.cli, args.acceptor, str(_THRIFT_BASE_PORT + i)]
@@ -128,6 +128,13 @@ def main():
             print e
             print e.output
     sleep(1)
+
+    h1 = net.get('h1')
+    h1.cmd("python scripts/proposerAgent.py --cfg scripts/paxos.cfg &")
+    h2 = net.get('h2')
+    h2.cmd("python scripts/learnerAgent.py --cfg scripts/paxos.cfg &")
+    h3 = net.get('h3')
+    h3.cmd("python scripts/learnerAgent.py --cfg scripts/paxos.cfg &")
 
     print "Ready !"
 

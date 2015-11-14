@@ -52,7 +52,8 @@ class Pserver(DatagramProtocol):
             self.defers[req_id].callback(result)
             pass
         except defer.AlreadyCalledError as ex:
-            logging.error(ex)
+            #logging.error("already call")
+            pass
 
 
 if __name__ == '__main__':
