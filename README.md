@@ -17,23 +17,32 @@ sudo ./run_demo.sh
 From the mininet prompt
 
 ```
-mininet> xterm h1 h2
+mininet> xterm h4
 ```
 
-## Paxos Learner
-
-Run learner agent on h2 (or h3)
-
+# Testing
+in h4 terminal
 ```
-./scripts/learnerAgent.py --cfg scripts/paxos.cfg
+./scripts/test.sh
+```
+Or, start Firefox web browser in h4 terminal
+```
+firefox &
 ```
 
-## Paxos Proposer
+# Simulating Failures
 
-Run proposer agent on h1 (or h4)
+In this demo, there are two replicas (learners) running on h2 and h3.
+The service is still alive if any one of switches or replicas crash.
 
+We can simulate the link failure by running *link* command in Mininet
 ```
-./scripts/proposerAgent.py --cfg scripts/paxos.cfg
+mininet> link h2 s2 down
+```
+
+Or, simulate the server failure by stopping the server process
+```
+mininet> h2 kill %python
 ```
 
 ## Config

@@ -106,7 +106,7 @@ class LServer(object):
                 sniff(iface=itf, count=count, filter="udp && dst port 34952",
                   prn = lambda x: self.handle_pkt(x, itf))
         except Exception as e:
-            logging.exception('{0}, interface {1}'.format(e, itf))
+            logging.error('{0}, interface {1}'.format(e, itf))
         return
 
     def start(self):
