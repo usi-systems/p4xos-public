@@ -132,9 +132,9 @@ def main():
     h1 = net.get('h1')
     h1.cmd("python scripts/httpServer.py --cfg scripts/paxos.cfg &")
     h2 = net.get('h2')
-    h2.cmd("python scripts/learnerAgent.py --cfg scripts/paxos.cfg &")
+    h2.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
     h3 = net.get('h3')
-    h3.cmd("python scripts/learnerAgent.py --cfg scripts/paxos.cfg &")
+    h3.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
 
     print "Ready !"
 
