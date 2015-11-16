@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
+import os, json, argparse, ConfigParser
 from twisted.internet import reactor, defer
 from twisted.internet.task import deferLater
 from twisted.web.resource import Resource
 from twisted.web.server import Site, NOT_DONE_YET
-import os
-import json
+from paxoscore.proposer import Proposer
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 
 class MainPage(Resource):
@@ -45,10 +45,19 @@ class WebServer(Resource):
     return NOT_DONE_YET
 
 if __name__=='__main__':
+    parser = argparse.ArgumentParser(description='Paxos Proposer.')
+    parser.add_argument('--cfg', required=True)
+    args = parser.parse_args()
+    config = ConfigParser.ConfigParser()
+    config.read(args.cfg)
+    proposer = Proposer(config, 0)
+    reactor.listenUDP(config.getint('proposer', 'port'), proposer)
+
     root = MainPage()
-    server = WebServer()
+    server = WebServer(proposer)
     root.putChild('get', server)
     root.putChild('put', server)
     factory = Site(root)
     reactor.listenTCP(8080, factory)
+
     reactor.run()

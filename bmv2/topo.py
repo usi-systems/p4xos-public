@@ -130,7 +130,7 @@ def main():
     sleep(1)
 
     h1 = net.get('h1')
-    h1.cmd("python scripts/proposerAgent.py --cfg scripts/paxos.cfg &")
+    h1.cmd("python scripts/httpServer.py --cfg scripts/paxos.cfg &")
     h2 = net.get('h2')
     h2.cmd("python scripts/learnerAgent.py --cfg scripts/paxos.cfg &")
     h3 = net.get('h3')
