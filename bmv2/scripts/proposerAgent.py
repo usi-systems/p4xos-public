@@ -22,27 +22,40 @@ logging.basicConfig(level=logging.DEBUG,format='%(message)s')
 VALUE_SIZE = 64
 
 class Pserver(DatagramProtocol):
-
+    """
+    PServer class implements a Paxos proposer which sends requests and wait 
+    asynchronously for responses.
+    """
     def __init__(self, config):
+        """
+        Initialize a PServer with a configuration of learner address and port.
+        The proposer is also configured with a port for receiving UDP packets.
+        """
         self.dst = (config.get('learner', 'addr'), \
                     config.getint('learner', 'port'))
         self.defers = {}
 
-    def startProtocol(self):
+    def submit(self, req_id, msg):
         """
-        Called after protocol has started listening.
+        Submit a request with an associated request id. The request id is used
+        to lookup the original request when receiving a response.
         """
-        pass
-
-    def send(self, req_id, msg):
         self.transport.write(msg, self.dst)
         self.defers[req_id] = defer.Deferred()
         return self.defers[req_id]
 
     def addDeliverHandler(self, deliver):
+        """
+        Add the application handler when a request was executed and the response 
+        was received.
+        """
         self.deliver = deliver
 
     def datagramReceived(self, datagram, address):
+        """
+        Receive response from Paxos Learners, match the response with the original 
+        request and pass it to the application handler.
+        """
         try:
             fmt = '>' + 'B {0}s'.format(VALUE_SIZE)
             packer = struct.Struct(fmt)
