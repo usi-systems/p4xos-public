@@ -4,11 +4,45 @@
     <title>NetPaxos</title>
 </head>
 <body>
-    <form action="get" method="get">
-        Key: <input type="text" name="key"><br>
-        Value: <input type="text" name="value"><br>
-        <button type="submit">Get Value</button>
-        <button type="submit" formmethod="post" formaction="put">Put (Key, Value)</button>
-</form>
+        Key: <input type="text" name="key" id="key"><br>
+        Value: <input type="text" name="value" id="value"><br>
+        <button id="get">Get Value</button>
+        <button id="put">Put (Key, Value)</button>
+
+<script type="text/javascript" src=./jquery.min.js></script>
+<script>
+$(function(){
+    $('#get').click(function(){
+        $.ajax({
+            type: "GET",
+            url: "/get",
+            data: {
+                key:$('#key').val()
+            },
+            success: function (msg) {
+                alert(msg);
+                $('#value').val(msg); 
+            }
+        });
+    });
+
+    $('#put').click(function(){
+        $.ajax({
+            type: "POST",
+            url: "/put",
+            data: {
+                key:$('#key').val(),
+                value:$('#value').val()
+            },
+            success: function (msg) {        
+                alert(msg);
+                // $('#value').val(msg);
+            }
+        });
+    });
+});
+</script>
 </body>
 </html>
+
+

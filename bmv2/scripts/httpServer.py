@@ -5,14 +5,17 @@ from twisted.internet import reactor, defer
 from twisted.internet.task import deferLater
 from twisted.web.resource import Resource
 from twisted.web.server import Site, NOT_DONE_YET
-from paxoscore.proposer import Proposer
+from twisted.web import static
+
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
+from paxoscore.proposer import Proposer
 
 class MainPage(Resource):
   def getChild(self, name, request):
     if name == '':
       return self
     else:
+      print name, request
       return Resource.getChild(self, name, request)
 
   def render_GET(self, request):
@@ -27,10 +30,12 @@ class WebServer(Resource):
     self.proposer = proposer
 
   def _waitResponse(self, result, request):
+    result = result.rstrip('\t\r\n\0')
     request.write(result)
     request.finish()
 
   def render_GET(self, request):
+    print request
     request.args['action'] = 'get'
     data = json.dumps(request.args)
     d = self.proposer.submit(data)
@@ -38,6 +43,7 @@ class WebServer(Resource):
     return NOT_DONE_YET
 
   def render_POST(self, request):
+    print request
     request.args['action'] = 'put'
     data = json.dumps(request.args)
     d = self.proposer.submit(data)
@@ -55,6 +61,7 @@ if __name__=='__main__':
 
     root = MainPage()
     server = WebServer(proposer)
+    root.putChild('jquery.min.js', static.File('%s/web/jquery.min.js' % THIS_DIR))
     root.putChild('get', server)
     root.putChild('put', server)
     factory = Site(root)
