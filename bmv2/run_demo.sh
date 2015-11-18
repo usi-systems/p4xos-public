@@ -30,4 +30,5 @@ sudo PYTHONPATH=$PYTHONPATH:$BMV2_PATH/mininet/ python topo.py \
     --behavioral-exe $BMV2_PATH/targets/simple_switch/simple_switch \
     --acceptor paxos_l2_control.json \
     --coordinator paxos_coordinator.json \
-    --cli $CLI_PATH
+    --cli $CLI_PATH \
+    --start-server

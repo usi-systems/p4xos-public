@@ -40,7 +40,7 @@ parser.add_argument('--coordinator', help='Path to coordinator JSON config file'
 parser.add_argument('--cli', help='Path to BM CLI',
                     type=str, action="store", required=True)
 parser.add_argument('--start-server', help='Start Paxos httpServer and backends',
-                    type=bool, action="store", default=False)
+                    action="store_true", default=False)
 
 args = parser.parse_args()
 
