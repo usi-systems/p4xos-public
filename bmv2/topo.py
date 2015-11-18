@@ -129,7 +129,20 @@ def main():
         except subprocess.CalledProcessError as e:
             print e
             print e.output
-    sleep(2)
+
+    for i in [2, 3, 4]:
+        cmd = [args.cli, args.acceptor, str(_THRIFT_BASE_PORT + i)]
+        with open("tmp.txt", "w+") as f:
+            f.write('register_write datapath_id 0 %d' % (i-1))
+            f.seek(0)
+            print " ".join(cmd)
+            try:
+                output = subprocess.check_output(cmd, stdin = f)
+                print output
+            except subprocess.CalledProcessError as e:
+                print e
+                print e.output
+        os.remove('tmp.txt')
 
     if args.start_server:
         h1 = net.get('h1')
