@@ -39,6 +39,8 @@ parser.add_argument('--coordinator', help='Path to coordinator JSON config file'
                     type=str, action="store", required=True)
 parser.add_argument('--cli', help='Path to BM CLI',
                     type=str, action="store", required=True)
+parser.add_argument('--start-server', help='Start Paxos httpServer and backends',
+                    type=bool, action="store", default=False)
 
 args = parser.parse_args()
 
@@ -129,12 +131,13 @@ def main():
             print e.output
     sleep(1)
 
-    h1 = net.get('h1')
-    h1.cmd("python scripts/httpServer.py --cfg scripts/paxos.cfg &")
-    h2 = net.get('h2')
-    h2.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
-    h3 = net.get('h3')
-    h3.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
+    if args.start_server:
+        h1 = net.get('h1')
+        h1.cmd("python scripts/httpServer.py --cfg scripts/paxos.cfg &")
+        h2 = net.get('h2')
+        h2.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
+        h3 = net.get('h3')
+        h3.cmd("python scripts/backend.py --cfg scripts/paxos.cfg &")
 
     print "Ready !"
 

@@ -123,12 +123,13 @@ class Learner(object):
             if pkt['IP'].proto != 0x11:
                 return
             datagram = pkt['Raw'].load
-            fmt = '>' + 'B H B B B {0}s'.format(VALUE_SIZE - 1)
+            fmt = '>' + 'B H B B Q B {0}s'.format(VALUE_SIZE - 1)
             packer = struct.Struct(fmt)
             packed_size = struct.calcsize(fmt)
             unpacked_data = packer.unpack(datagram[:packed_size])
-            typ, inst, rnd, vrnd, req_id, value = unpacked_data
+            typ, inst, rnd, vrnd, acceptor_id, req_id, value = unpacked_data
             value = value.rstrip('\t\r\n\0')
+            logging.debug('acceptor_id: %d' % acceptor_id)
             #logging.debug("| %10s | %4d |  %02x | %02x | %d | %64s |" % \
             #        (paxos_type[typ], inst, rnd, vrnd, req_id, value))
             if typ == PHASE_2B:

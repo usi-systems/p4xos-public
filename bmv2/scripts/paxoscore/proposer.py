@@ -35,8 +35,8 @@ class Proposer(DatagramProtocol):
         to lookup the original request when receiving a response.
         """
         self.req_id += 1
-        values = (PHASE_2A, 0, self.rnd, self.rnd, self.req_id, msg)
-        packer = struct.Struct('>' + 'B H B B B {0}s'.format(VALUE_SIZE-1))
+        values = (PHASE_2A, 0, self.rnd, self.rnd, 0, self.req_id, msg)
+        packer = struct.Struct('>' + 'B H B B Q B {0}s'.format(VALUE_SIZE-1))
         packed_data = packer.pack(*values)
         self.transport.write(packed_data, self.dst)
         self.defers[self.req_id] = defer.Deferred()
