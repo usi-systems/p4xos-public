@@ -7,7 +7,6 @@ import logging
 import argparse
 import ConfigParser
 from scapy.all import *
-from interfaces import all_interfaces
 from threading import Condition
 
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
@@ -56,13 +55,16 @@ def main():
     args = parser.parse_args()
     config = ConfigParser.ConfigParser()
     config.read(args.cfg)
-    itfs = all_interfaces()
-    itf_names = zip(*itfs)[0]
-    learner = Learner(config, itf_names)
+
+    num_acceptors = config.getint('common', 'num_acceptors')
+    count = config.getint('instance', 'count')
+    timeout = config.getint('timeout', 'second')
+
+    learner = Learner(num_acceptors)
     dbserver = SimpleDatabase()
     learner.addDeliver(dbserver.deliver)
     try:
-        learner.start()
+        learner.start(count, timeout)
     except (KeyboardInterrupt, SystemExit):
         learner.stop()
         sys.exit()

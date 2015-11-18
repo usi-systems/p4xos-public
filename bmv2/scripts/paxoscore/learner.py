@@ -86,16 +86,12 @@ class Learner(object):
     A learner instance provides the ordering of requests to the overlay application.
     If a decision has been made, the learner delivers that decision to the application.
     """
-    def __init__(self, config, itfs):
+    def __init__(self, num_acceptors):
         """
-        Initialize a learner with the set of network interfaces and a configuration
-        file specifies the port that the learner will listen on and the address that 
-        it will bind to.
+        Initialize a learner with the number of acceptors, maximum number of requests,
+        and the running duration.
         """
-        self.learner = PaxosLearner(len(itfs))
-        self.config = config
-        self.itfs = itfs
-        self.threads = []
+        self.learner = PaxosLearner(num_acceptors)
 
     def respond(self, result, req_id, dst, sport, dport):
         """
@@ -113,7 +109,7 @@ class Learner(object):
         """
         self.deliver = deliver_cb
 
-    def handle_pkt(self, pkt, itf):
+    def handle_pkt(self, pkt):
         """
         This method handles the arrived packet, such as parsing, handing out the packet to
         Paxos learner module, and delivering the decision.
@@ -129,11 +125,8 @@ class Learner(object):
             unpacked_data = packer.unpack(datagram[:packed_size])
             typ, inst, rnd, vrnd, acceptor_id, req_id, value = unpacked_data
             value = value.rstrip('\t\r\n\0')
-            logging.debug('acceptor_id: %d' % acceptor_id)
-            #logging.debug("| %10s | %4d |  %02x | %02x | %d | %64s |" % \
-            #        (paxos_type[typ], inst, rnd, vrnd, req_id, value))
             if typ == PHASE_2B:
-                msg = PaxosMessage(itf, inst, rnd, vrnd, value)
+                msg = PaxosMessage(acceptor_id, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
                     d = defer.Deferred()
@@ -143,33 +136,22 @@ class Learner(object):
         except IndexError as ex:
             logging.error(ex)
 
-    def worker(self, itf):
-        """
-        Each worker is a thread that captures the packet on the interface passing in the argument
-        """
-        count = self.config.getint('instance', 'count')
-        t = self.config.getint('timeout', 'second')
-        try:
-            if t > 0:
-                sniff(iface=itf, count=count, timeout=t, filter="udp && dst port 34952",
-                  prn = lambda x: self.handle_pkt(x, itf))
-            else:
-                sniff(iface=itf, count=count, filter="udp && dst port 34952",
-                  prn = lambda x: self.handle_pkt(x, itf))
-        except Exception as e:
-            logging.error('{0}, interface {1}'.format(e, itf))
-        return
-
-    def start(self):
+    def start(self, count, timeout):
         """
         Start a learner by sniffing on all learner's interfaces.
         """
         logging.debug("| %10s | %4s |  %2s | %2s | %4s | %s |" % \
              ("type", "inst", "pr", "ar", "val", "payload"))
-        for i in self.itfs:
-            t = Thread(target=self.worker, args=(i,))
-            self.threads.append(t)
-            t.start()
+        try:
+            if timeout > 0:
+                sniff(count=count, timeout=timeout, filter="udp && dst port 34952",
+                  prn = lambda x: self.handle_pkt(x))
+            else:
+                sniff(count=count, filter="udp && dst port 34952",
+                  prn = lambda x: self.handle_pkt(x))
+        except Exception as e:
+            logging.error(e)
+        return
 
     def stop(self):
         """

@@ -129,7 +129,7 @@ def main():
         except subprocess.CalledProcessError as e:
             print e
             print e.output
-    sleep(1)
+    sleep(2)
 
     if args.start_server:
         h1 = net.get('h1')
