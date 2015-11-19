@@ -1,14 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>NetPaxos</title>
+    <title>P4 Paxos</title>
+    <style>
+        div {
+            align-items: center;
+        }
+
+        input, select, textarea {
+            font-family : inherit;
+            font-size   : 100%;
+            width : 150px;
+            margin: 5;
+            box-sizing: border-box;
+        }
+        button {
+            font-family : inherit;
+            font-size   : 100%;
+            margin: 5;
+            box-sizing: border-box;
+            width : 60px;
+        }
+    </style>
 </head>
 <body>
-        Key: <input type="text" name="key" id="key"><br>
-        Value: <input type="text" name="value" id="value"><br>
-        <button id="get">Get Value</button>
-        <button id="put">Put (Key, Value)</button>
-
+    <h1>P4 Paxos</h1>
+    <hr>
+    <h2>Simple Key Value store database</h2>
+    <div>
+        <input type="search" name="key" id="key" placeholder="Key">
+        <button id="get">Get</button><br>
+        <input type="search" name="value" id="value" placeholder="Value">
+        <button id="put">Put</button>
+    </div>
 <script type="text/javascript" src=./jquery.min.js></script>
 <script>
 $(function(){
