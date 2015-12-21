@@ -2,52 +2,39 @@
 
 import os
 import sys
-import json
 import logging
 import argparse
 import ConfigParser
 from scapy.all import *
-from threading import Condition
+from paxoscore.learner import Learner
+from twisted.internet import defer
+
 
 THIS_DIR=os.path.dirname(os.path.realpath(__file__))
 sys.path.append(THIS_DIR)
-from paxoscore.learner import Learner
 
 class SimpleDatabase(object):
     """
     Simple database backend
     """
     def __init__(self):
-        self.current = 1
-        self.cond = Condition()
         self.db = {}
 
-    def execute(self, inst, cmd, d):
-        with self.cond:
-            while inst > self.current:
-                self.cond.wait()
-            if cmd['action'] == 'put':
-                k = cmd['key'][0]
-                v = cmd['value'][0]
-                self.db[k] = v
-                self.current += 1
-                self.cond.notifyAll()
-                d.callback("Success\n")
-            if cmd['action'] == 'get':
-                k = cmd['key'][0]
-                self.current += 1
-                self.cond.notifyAll()
-                try:
-                    v = self.db.get(k)
-                    d.callback('%s\n' % v)
-                except KeyError as ex:
-                    d.callback("None\n")
+    def execute(self, cmd, d):
+        if cmd['action'] == 'put':
+            k = cmd['key'][0]
+            v = cmd['value'][0]
+            self.db[k] = v
+            d.callback("Success\n")
 
-    def deliver(self, res, d):
-        inst, cmd = res
-        inst = int(inst)
-        cmd  = json.loads(cmd)
-        self.execute(inst, cmd, d)
+        elif cmd['action'] == 'get':
+            k = cmd['key'][0]
+            try:
+                v = self.db.get(k)
+                d.callback('%s\n' % v)
+            except KeyError as ex:
+                d.callback("None\n")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Paxos Proposer.')
@@ -62,7 +49,7 @@ def main():
 
     learner = Learner(num_acceptors)
     dbserver = SimpleDatabase()
-    learner.addDeliver(dbserver.deliver)
+    learner.addDeliver(dbserver.execute)
     try:
         learner.start(count, timeout)
     except (KeyboardInterrupt, SystemExit):

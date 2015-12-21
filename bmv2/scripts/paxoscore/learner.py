@@ -6,6 +6,7 @@ from math import ceil
 from scapy.all import *
 from twisted.internet import defer
 from threading import Thread
+import json
 
 logging.basicConfig(level=logging.DEBUG,format='%(message)s')
 VALUE_SIZE = 64
@@ -92,6 +93,8 @@ class Learner(object):
         and the running duration.
         """
         self.learner = PaxosLearner(num_acceptors)
+        self.logs = {}
+        self.minUndeliveredIndex = 0
 
     def respond(self, result, req_id, dst, sport, dport):
         """
@@ -108,6 +111,17 @@ class Learner(object):
         request has been chosen for servicing.
         """
         self.deliver = deliver_cb
+
+    def deliverInOrder(self, res):
+        d = defer.Deferred()
+        inst, cmd = res
+        inst = int(inst)
+        cmd  = json.loads(cmd)
+        self.deliver(cmd, d)
+        self.minUndeliveredIndex += 1
+        return d
+
+
 
     def handle_pkt(self, pkt):
         """
@@ -129,8 +143,7 @@ class Learner(object):
                 msg = PaxosMessage(acceptor_id, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
-                    d = defer.Deferred()
-                    self.deliver(res, d)
+                    d = self.deliverInOrder(res)
                     d.addCallback(self.respond, req_id, pkt[IP].src,
                         pkt[UDP].dport, pkt[UDP].sport)
         except IndexError as ex:
