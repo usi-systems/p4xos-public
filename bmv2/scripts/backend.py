@@ -44,10 +44,12 @@ def main():
     config.read(args.cfg)
 
     num_acceptors = config.getint('common', 'num_acceptors')
+    learner_addr = config.get('learner', 'addr')
+    learner_port = config.getint('learner', 'port')
     count = config.getint('instance', 'count')
     timeout = config.getint('timeout', 'second')
 
-    learner = Learner(num_acceptors)
+    learner = Learner(num_acceptors, learner_addr, learner_port)
     dbserver = SimpleDatabase()
     learner.addDeliver(dbserver.execute)
     try:

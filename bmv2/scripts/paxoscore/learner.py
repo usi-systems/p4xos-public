@@ -7,9 +7,13 @@ from scapy.all import *
 from twisted.internet import defer
 from threading import Thread
 import json
+import netifaces
 
 logging.basicConfig(level=logging.DEBUG,format='%(message)s')
 VALUE_SIZE = 64
+PHASE1A = 1
+PHASE1B = 2
+PHASE_2A = 3
 PHASE_2B = 4
 
 class PaxosMessage(object):
@@ -87,14 +91,15 @@ class Learner(object):
     A learner instance provides the ordering of requests to the overlay application.
     If a decision has been made, the learner delivers that decision to the application.
     """
-    def __init__(self, num_acceptors):
+    def __init__(self, num_acceptors, learner_addr, learner_port):
         """
         Initialize a learner with the number of acceptors, maximum number of requests,
         and the running duration.
         """
         self.learner = PaxosLearner(num_acceptors)
-        self.logs = {}
-        self.minUndeliveredIndex = 0
+        self.learner_addr = learner_addr
+        self.learner_port = learner_port
+        self.minUncommitedIndex = 1
 
     def respond(self, result, req_id, dst, sport, dport):
         """
@@ -112,14 +117,49 @@ class Learner(object):
         """
         self.deliver = deliver_cb
 
-    def deliverInOrder(self, res):
-        d = defer.Deferred()
-        inst, cmd = res
-        inst = int(inst)
-        cmd  = json.loads(cmd)
-        self.deliver(cmd, d)
-        self.minUndeliveredIndex += 1
-        return d
+    def make_paxos(self, typ, i, rnd, vrnd, val):
+        request_id = 10
+        acceptor_id = 10
+        values = (typ, i, rnd, vrnd, acceptor_id, request_id, val)
+        packer = struct.Struct('!' + 'B H B B Q B {0}s'.format(VALUE_SIZE-1))
+        packed_data = packer.pack(*values)
+        return packed_data
+
+    def sendMsg(self, msg, dst, dport):
+        """
+        This method sends the reply from application server to the origin of the request.
+        """
+        for itf in netifaces.interfaces():
+            ether = Ether(src='00:04:00:00:00:01', dst='01:00:5e:03:1d:47')
+            pkt_header = ether/IP(dst=dst)/UDP(sport=12345, dport=dport)
+            sendp(pkt_header/msg, iface=itf, verbose=False)
+
+    def retryInstance(self, inst):
+        msg1a = self.make_paxos(PHASE1A, inst, 1, 0, '')
+        self.sendMsg(msg1a, self.learner_addr, self.learner_port)
+
+    def deliverInstance(self, inst):
+        try:
+            d = defer.Deferred()
+            if inst == self.minUncommitedIndex:
+                cmd = self.learner.logs[inst]
+                cmd_in_dict = json.loads(cmd)
+                print type(cmd_in_dict)
+                print "%d %s" % (inst, cmd_in_dict)
+                self.deliver(cmd_in_dict, d)
+                self.minUncommitedIndex += 1
+                print "minUncommitedIndex: %d" % self.minUncommitedIndex
+                return d
+            elif inst > self.minUncommitedIndex:
+                return self.deliverInstance(inst - 1)
+        except KeyError as keyerr:
+            print "Log has a gap at index %d" % inst
+            self.retryInstance(inst)
+            d.callback("Retry")
+            return d
+        except:
+            print "Unexpected error:", sys.exc_info()[0]
+            raise
 
 
 
@@ -143,9 +183,12 @@ class Learner(object):
                 msg = PaxosMessage(acceptor_id, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
-                    d = self.deliverInOrder(res)
+                    inst = int(res[0])
+                    d = self.deliverInstance(inst)
                     d.addCallback(self.respond, req_id, pkt[IP].src,
                         pkt[UDP].dport, pkt[UDP].sport)
+            elif typ == PHASE1B:
+                print "Received Phase1B", unpacked_data
         except IndexError as ex:
             logging.error(ex)
 
