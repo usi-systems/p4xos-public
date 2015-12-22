@@ -11,8 +11,8 @@ import netifaces
 
 logging.basicConfig(level=logging.DEBUG,format='%(message)s')
 VALUE_SIZE = 64
-PHASE1A = 1
-PHASE1B = 2
+PHASE_1A = 1
+PHASE_1B = 2
 PHASE_2A = 3
 PHASE_2B = 4
 
@@ -47,8 +47,20 @@ class PaxosLearner(object):
         """
         self.logs = {}
         self.states = {}
+        self.proposerState = {}
         self.majority = ceil((num_acceptors + 1) / 2)
 
+
+    class ProposerState(object):
+        """
+        The state of learner of a particular instance.
+        """
+        def __init__(self, crnd):
+            self.crnd = crnd
+            self.nids = set()
+            self.hval = None
+            self.hvrnd = 0
+            self.finished = False
 
     class LearnerState(object):
         """
@@ -59,6 +71,27 @@ class PaxosLearner(object):
             self.nids = set()
             self.val = None
             self.finished = False
+
+
+    def handle_p1b(self, msg):
+        """handle 1a message and return decision if existing a majority.
+        Otherwise return None"""
+        res = None
+        state = self.proposerState.get(msg.inst)  
+        if state is None:
+            state = self.ProposerState(msg.crnd)
+        if not state.finished:
+            if state.crnd == msg.crnd:
+                if msg.nid not in state.nids:
+                    state.nids.add(msg.nid)
+                    if state.hvrnd <= msg.vrnd:
+                        state.hval = msg.val
+
+                    if len(state.nids) >= self.majority:
+                        state.finished = True
+                        res = PaxosMessage(10, msg.inst, state.crnd, state.hvrnd, state.hval)                        
+                    self.proposerState[msg.inst] = state
+        return res
 
 
     def handle_p2b(self, msg):
@@ -135,7 +168,7 @@ class Learner(object):
             sendp(pkt_header/msg, iface=itf, verbose=False)
 
     def retryInstance(self, inst):
-        msg1a = self.make_paxos(PHASE1A, inst, 1, 0, '')
+        msg1a = self.make_paxos(PHASE_1A, inst, 1, 0, '')
         self.sendMsg(msg1a, self.learner_addr, self.learner_port)
 
     def deliverInstance(self, inst):
@@ -144,7 +177,6 @@ class Learner(object):
             if inst == self.minUncommitedIndex:
                 cmd = self.learner.logs[inst]
                 cmd_in_dict = json.loads(cmd)
-                print type(cmd_in_dict)
                 print "%d %s" % (inst, cmd_in_dict)
                 self.deliver(cmd_in_dict, d)
                 self.minUncommitedIndex += 1
@@ -179,16 +211,19 @@ class Learner(object):
             unpacked_data = packer.unpack(datagram[:packed_size])
             typ, inst, rnd, vrnd, acceptor_id, req_id, value = unpacked_data
             value = value.rstrip('\t\r\n\0')
+            msg = PaxosMessage(acceptor_id, inst, rnd, vrnd, value)
             if typ == PHASE_2B:
-                msg = PaxosMessage(acceptor_id, inst, rnd, vrnd, value)
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
                     inst = int(res[0])
                     d = self.deliverInstance(inst)
                     d.addCallback(self.respond, req_id, pkt[IP].src,
                         pkt[UDP].dport, pkt[UDP].sport)
-            elif typ == PHASE1B:
-                print "Received Phase1B", unpacked_data
+            elif typ == PHASE_1B:
+                res = self.learner.handle_p1b(msg)
+                if res is not None:
+                    msg2a = self.make_paxos(PHASE_2A, res.inst, res.crnd, res.vrnd, res.val)
+                    self.sendMsg(msg2a, self.learner_addr, self.learner_port)
         except IndexError as ex:
             logging.error(ex)
 
