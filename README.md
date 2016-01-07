@@ -30,6 +30,8 @@ Or, start Firefox web browser in h4 terminal
 firefox &
 ```
 
+In the firefox browser, visit 10.0.0.1:8080 , then you can try to Get or Put a (key, value) pair.
+
 # Simulating Failures
 
 In this demo, there are two replicas (learners) running on h2 and h3.
