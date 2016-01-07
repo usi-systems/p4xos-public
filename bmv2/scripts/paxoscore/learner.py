@@ -133,6 +133,7 @@ class Learner(object):
         self.learner_addr = learner_addr
         self.learner_port = learner_port
         self.minUncommitedIndex = 1
+        self.maxInstance = 1
 
     def respond(self, result, req_id, dst, sport, dport):
         """
@@ -181,8 +182,12 @@ class Learner(object):
                 self.deliver(cmd_in_dict, d)
                 self.minUncommitedIndex += 1
                 print "minUncommitedIndex: %d" % self.minUncommitedIndex
+                if inst < self.maxInstance:
+                    print "Try deliver next instance %d" % (inst + 1)
+                    self.deliverInstance(inst + 1)
                 return d
             elif inst > self.minUncommitedIndex:
+                print "Try deliver instance %d" % (inst - 1)
                 return self.deliverInstance(inst - 1)
         except KeyError as keyerr:
             print "Log has a gap at index %d" % inst
@@ -216,6 +221,8 @@ class Learner(object):
                 res = self.learner.handle_p2b(msg)
                 if res is not None:
                     inst = int(res[0])
+                    if self.maxInstance < inst:
+                        self.maxInstance = inst
                     d = self.deliverInstance(inst)
                     d.addCallback(self.respond, req_id, pkt[IP].src,
                         pkt[UDP].dport, pkt[UDP].sport)
