@@ -6,3 +6,4 @@ tests/
 *.json
 *.log
 *.pyc
+test_app/build
