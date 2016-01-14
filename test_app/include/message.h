@@ -1,12 +1,13 @@
 #ifndef _MESSAGE_H_
 #define _MESSAGE_H_
+#include <stdint.h>
 
 typedef struct Message {
-    char mstype;
-    short inst;
-    char rnd;
-    char vrnd;
-    char acpid[8];
+    unsigned int mstype:8;
+    unsigned int inst:16;
+    unsigned int rnd:8;
+    unsigned int vrnd:8;
+    uint64_t acpid;
     char value[64];
 } Message;
 

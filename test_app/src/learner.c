@@ -10,7 +10,7 @@
 #include "message.h"
 
 /* Here's a callback function that calls loop break */
-#define LEARNER_PORT 35492
+#define LEARNER_PORT 34952
 #define BUFSIZE 1470
 
 void cb_func(evutil_socket_t fd, short what, void *arg)
@@ -19,10 +19,9 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     struct sockaddr_in remote;
     socklen_t remote_len = sizeof(remote);
     int n = recvfrom(fd, &msg, sizeof(msg), 0, (struct sockaddr *) &remote, &remote_len);
-    if (n < 0) 
+    if (n < 0)
       perror("ERROR in recvfrom");
     printf("Received packet from %s:%d\n", inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
-    
     char buf[BUFSIZE];
     message_to_string(msg, buf);
     printf("%s" , buf);
@@ -39,6 +38,7 @@ int start_learner() {
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(LEARNER_PORT);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
+    // bindSocketToDevice(fd, "eth2");
     if (bind(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
         perror("ERROR on binding");
     struct event *ev1;

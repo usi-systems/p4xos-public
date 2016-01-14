@@ -8,9 +8,10 @@
 #include <arpa/inet.h>
 #include <event2/event.h>
 #include <strings.h>
+#include <inttypes.h>
 #include "message.h"
 
-#define LEARNER_PORT 35492
+#define LEARNER_PORT 34952
 #define BUFSIZE 1470
 /* Here's a callback function that calls loop break */
 void recv_cb(evutil_socket_t fd, short what, void *arg)
@@ -23,12 +24,13 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     struct sockaddr_in *serveraddr = (struct sockaddr_in *) arg;
     socklen_t serverlen = sizeof(*serveraddr);
     Message msg;
-    msg.mstype = '1';
+    msg.mstype = 3;
     msg.inst = 10;
-    msg.rnd = '1';
-    msg.vrnd = '0';
-    sprintf(msg.acpid, "%8s", "69701832");
-    sprintf(msg.value, "%s", "8364XVJF");
+    msg.rnd = 31;
+    msg.vrnd = 31;
+    msg.acpid = 1;
+    bzero(msg.value, sizeof(msg.value));
+    sprintf(msg.value, "%s", "abcdefgh");
 
     size_t msglen = sizeof(msg);
     int n = sendto(fd, &msg, msglen, 0, (struct sockaddr*) serveraddr, serverlen);
@@ -38,7 +40,7 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     printf("Send %d bytes\n", n);
 }
 
-int start_proposer(char* hostname) {
+int start_proposer(char* hostname, int duration) {
     struct hostent *server;
     int serverlen;
     struct sockaddr_in serveraddr;
@@ -63,7 +65,7 @@ int start_proposer(char* hostname) {
     serveraddr.sin_port = htons(LEARNER_PORT);
 
     struct event *ev_recv, *ev_send;
-    struct timeval timeout = {0,1000000};
+    struct timeval timeout = {0, duration};
     ev_recv = event_new(base, fd, EV_READ|EV_PERSIST, recv_cb, NULL);
     ev_send = event_new(base, fd, EV_TIMEOUT|EV_PERSIST, send_cb, &serveraddr);
     event_add(ev_recv, NULL);

@@ -8,7 +8,8 @@ int main(int argc, char* argv[]) {
     int opt = 0;
     int role = 0;
     char *hostname;
-    while ((opt = getopt(argc, argv, "plh:")) != -1) {
+    int duration = 10000;
+    while ((opt = getopt(argc, argv, "plh:d:")) != -1) {
         switch(opt) {
             case 'p':
                 role = 1;
@@ -19,12 +20,15 @@ int main(int argc, char* argv[]) {
             case 'h':
                 hostname = optarg;
                 break;
+            case 'd':
+                duration = atoi(optarg);
+                break;
         }
     }
 
     if (role == 1) {
         // start proposer
-        start_proposer(hostname);
+        start_proposer(hostname, duration);
     } else if (role == 2) {
         // start learner
         start_learner();
