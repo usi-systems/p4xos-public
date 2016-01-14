@@ -1,3 +1,6 @@
+#ifndef _HEADERS_P4_
+#define _HEADERS_P4_
+
 // standard headers
 
 header_type ethernet_t {
@@ -93,4 +96,4 @@ calculated_field udp.checksum {
     update udp_checksum if (valid(udp));
 }
 
-
+#endif

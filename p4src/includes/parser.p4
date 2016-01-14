@@ -1,3 +1,6 @@
+#ifndef _PARSER_P4_
+#define _PARSER_P4_
+
 // Parser for ethernet, ipv4, and udp headers
 
 parser start {
@@ -32,3 +35,4 @@ parser parse_udp {
     }
 }
 
+#endif

@@ -1,3 +1,6 @@
+#ifndef _PAXOS_HEADERS_P4_
+#define _PAXOS_HEADERS_P4_
+
 // Headers for Paxos
 
 #define MSGTYPE_SIZE 8
@@ -18,3 +21,5 @@ header_type paxos_t {
 }
 
 header paxos_t paxos;
+
+#endif

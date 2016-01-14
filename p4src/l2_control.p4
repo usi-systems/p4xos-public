@@ -1,5 +1,6 @@
+#include "includes/headers.p4"
+#include "includes/parser.p4"
 
-#include "paxos_acceptor.p4"
 
 header_type intrinsic_metadata_t {
     fields {
@@ -71,21 +72,8 @@ table drop_tbl {
     size : 1;
 }
 
-control ingress {
-    apply(smac);                 /* l2 learning switch logic */
-    apply(dmac);
-                                 /* TODO(check if we can split out control */
-    if (valid(paxos)) {          /* check if we have a paxos packet */
-        apply(round_tbl);
-        if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
-            apply(acceptor_tbl);
-         } else apply(drop_tbl); /* deprecated prepare/promise */
-     }
-}
-
 control egress {
     if(standard_metadata.ingress_port == standard_metadata.egress_port) {
         apply(mcast_src_pruning);
     }
-
 }
