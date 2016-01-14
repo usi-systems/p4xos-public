@@ -1,13 +1,11 @@
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
-#include "l2_control.p4"
-
-#define INSTANCE_COUNT 65536 // infer from INSTANCE_SIZE: 2^16 instances
 
 #define PAXOS_1A 1 
 #define PAXOS_1B 2 
-#define PAXOS_2A 3 
+#define PAXOS_2A 3
 #define PAXOS_2B 4 
+
 
 header_type ingress_metadata_t {
     fields {
@@ -72,13 +70,3 @@ table acceptor_tbl {
     actions { handle_1a; handle_2a; _drop; }
 }
 
-control ingress {
-    apply(smac);                 /* l2 learning switch logic */
-    apply(dmac);
-    if (valid(paxos)) {          /* check if we have a paxos packet */
-        apply(round_tbl);
-        if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
-            apply(acceptor_tbl);
-         } else apply(drop_tbl); /* deprecated prepare/promise */
-     }
-}

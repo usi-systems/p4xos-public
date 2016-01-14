@@ -9,6 +9,8 @@
 #define VALUE_SIZE 512
 #define DATAPATH_SIZE 64
 
+#define INSTANCE_COUNT 65536 // change according to INSTANCE_SIZE (=2^INSTANCE_SIZE)
+
 header_type paxos_t {
     fields {
         msgtype : MSGTYPE_SIZE;         // indicates the message type e.g., 1A, 1B, etc.
