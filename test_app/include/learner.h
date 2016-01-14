@@ -1,9 +1,10 @@
 #ifndef _LEARNER_H
 #define _LEARNER_H
+#include <sys/types.h>
 
 typedef struct Stat {
     int mps;
-    float avg_lat;
+    int64_t avg_lat;
 } Stat;
 
 int start_learner();

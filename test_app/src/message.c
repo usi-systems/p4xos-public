@@ -21,9 +21,11 @@ void message_to_string(Message m, char *str) {
         "round:    %.2x\n"
         "vround:   %.2x\n"
         "acceptor: %"PRIx64"\n"
+        "time: %lld.%09ld\n"
         "value:    %s\n",
         m.mstype, m.inst, m.rnd, m.vrnd,
         m.acpid,
+        (long long)m.ts.tv_sec, m.ts.tv_nsec,
         m.value);
 }
 
@@ -33,6 +35,7 @@ Message decode_message(Message m) {
     res.inst = ntohs(m.inst);
     res.rnd = m.rnd;
     res.vrnd = m.vrnd;
+    res.ts = m.ts;
 #if __BYTE_ORDER == __BIG_ENDIAN
     res.acpid = m.acpid;
 #else

@@ -13,10 +13,24 @@
 #define LEARNER_PORT 34952
 #define BUFSIZE 1470
 
+int64_t timediff(struct timespec *start, struct timespec *end)
+{
+    int64_t result = (1e9 * (end->tv_sec - start->tv_sec) +
+                    end->tv_nsec - start->tv_nsec);
+    if (result > 0)
+        return result;
+    else
+        return 0;
+}
+
 
 void monitor(evutil_socket_t fd, short what, void *arg) {
     Stat *stat = (Stat *) arg;
-    printf("mps: %d, avg_lat: %f\n", stat->mps, stat->avg_lat);
+    if (stat->avg_lat > 0) {
+        printf("message/second: %d, average latency: %.2f\n", stat->mps, ((double) stat->avg_lat) / stat->mps);
+        stat->mps = 0;
+        stat->avg_lat = 0;
+    }
 
 }
 
@@ -30,13 +44,16 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     int n = recvfrom(fd, &msg, sizeof(msg), 0, (struct sockaddr *) &remote, &remote_len);
     if (n < 0)
       perror("ERROR in recvfrom");
-    printf("Received %d bytes from %s:%d\n", n, inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
+    // printf("Received %d bytes from %s:%d\n", n, inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
     char buf[BUFSIZE];
     Message m = decode_message(msg);
     message_to_string(m, buf);
-    printf("%s" , buf);
+    // printf("%s" , buf);
     stat->mps++;
-    stat->avg_lat += 0.1;
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    int64_t latency = timediff(&m.ts, &end);
+    stat->avg_lat += latency;
 }
 
 int start_learner() {

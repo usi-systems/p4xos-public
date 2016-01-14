@@ -1,4 +1,3 @@
-#include "proposer.h"
 #include <stdio.h>
 #include <event2/event.h>
 #include <sys/socket.h>
@@ -9,6 +8,9 @@
 #include <event2/event.h>
 #include <strings.h>
 #include <inttypes.h>
+#include <time.h>
+
+#include "proposer.h"
 #include "message.h"
 
 #define LEARNER_PORT 34952
@@ -29,15 +31,21 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     msg.rnd = 31;
     msg.vrnd = 31;
     msg.acpid = 1;
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &msg.ts);
     bzero(msg.value, sizeof(msg.value));
     sprintf(msg.value, "%s", "abcdefgh");
+
+    // char buf[BUFSIZE];
+    // message_to_string(msg, buf);
+    // printf("%s" , buf);
 
     size_t msglen = sizeof(msg);
     int n = sendto(fd, &msg, msglen, 0, (struct sockaddr*) serveraddr, serverlen);
     if (n < 0)
         perror("ERROR in sendto");
 
-    printf("Send %d bytes\n", n);
+    // printf("Send %d bytes\n", n);
 }
 
 int start_proposer(char* hostname, int duration) {
