@@ -1,4 +1,3 @@
-#include "learner.h"
 #include <stdio.h>
 #include <event2/event.h>
 #include <sys/socket.h>
@@ -8,20 +7,12 @@
 #include <event2/event.h>
 #include <strings.h>
 #include "message.h"
+#include "learner.h"
+#include "netpaxos_utils.h"
 
 /* Here's a callback function that calls loop break */
 #define LEARNER_PORT 34952
 #define BUFSIZE 1470
-
-int64_t timediff(struct timespec *start, struct timespec *end)
-{
-    int64_t result = (1e9 * (end->tv_sec - start->tv_sec) +
-                    end->tv_nsec - start->tv_nsec);
-    if (result > 0)
-        return result;
-    else
-        return 0;
-}
 
 
 void monitor(evutil_socket_t fd, short what, void *arg) {
@@ -51,7 +42,7 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     // printf("%s" , buf);
     stat->mps++;
     struct timespec end;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    gettime(&end);
     int64_t latency = timediff(&m.ts, &end);
     stat->avg_lat += latency;
 }

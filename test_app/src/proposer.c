@@ -12,6 +12,7 @@
 
 #include "proposer.h"
 #include "message.h"
+#include "netpaxos_utils.h"
 
 #define LEARNER_PORT 34952
 #define BUFSIZE 1470
@@ -32,7 +33,7 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     msg.vrnd = 31;
     msg.acpid = 1;
 
-    clock_gettime(CLOCK_MONOTONIC_RAW, &msg.ts);
+    gettime(&msg.ts);
     bzero(msg.value, sizeof(msg.value));
     sprintf(msg.value, "%s", "abcdefgh");
 
