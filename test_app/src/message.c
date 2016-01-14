@@ -1,7 +1,8 @@
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <inttypes.h>
-#include <endian.h>
+#include <sys/types.h>
 #include "message.h"
 
 
@@ -21,11 +22,22 @@ void message_to_string(Message m, char *str) {
         "vround:   %.2x\n"
         "acceptor: %"PRIx64"\n"
         "value:    %s\n",
-        m.mstype, ntohs(m.inst), m.rnd, m.vrnd,
-#if __BYTE_ORDER == __BIG_ENDIAN
+        m.mstype, m.inst, m.rnd, m.vrnd,
         m.acpid,
-#else
-        invert_byte_order(m.acpid),
-#endif
         m.value);
+}
+
+Message decode_message(Message m) {
+    Message res;
+    res.mstype = m.mstype;
+    res.inst = ntohs(m.inst);
+    res.rnd = m.rnd;
+    res.vrnd = m.vrnd;
+#if __BYTE_ORDER == __BIG_ENDIAN
+    res.acpid = m.acpid;
+#else
+    res.acpid = invert_byte_order(m.acpid),
+#endif
+    strcpy(res.value ,m.value);
+    return res;
 }

@@ -11,5 +11,7 @@ typedef struct Message {
     char value[64];
 } Message;
 
+Message decode_message(Message m);
 void message_to_string(Message m, char *str);
+
 #endif
