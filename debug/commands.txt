@@ -1,5 +1,4 @@
-table_set_default smac mac_learn
-table_set_default dmac broadcast
+table_set_default mac_table mac_learn
 table_set_default mcast_src_pruning _nop
 table_set_default sequence_tbl _nop
 table_set_default role_tbl read_role
@@ -11,4 +10,3 @@ mc_node_associate 1 0
 register_write role_register 0 1
 register_read role_register 0
 mirroring_add 1024 0
-table_set_default redirect copy_cpu_header

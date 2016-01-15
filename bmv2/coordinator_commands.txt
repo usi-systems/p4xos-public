@@ -1,5 +1,4 @@
-table_set_default smac mac_learn
-table_set_default dmac broadcast
+table_set_default mac_table mac_learn
 table_set_default mcast_src_pruning _nop
 table_set_default sequence_tbl _nop
 table_add mcast_src_pruning _drop 5 =>

@@ -27,9 +27,8 @@ table role_tbl {
     actions { read_role; }
 }
 
-control ingress {
-    apply(smac);                 /* l2 learning switch logic */
-    apply(dmac);
+control paxos_ingress {
+    ingress();
     if (valid(paxos)) {          /* check if we have a paxos packet */
         apply(role_tbl);
         if (switch_metadata.role == IS_COORDINATOR) {

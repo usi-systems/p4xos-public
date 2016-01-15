@@ -5,7 +5,7 @@
 
 parser parse_paxos {
     extract(paxos);
-    return ingress;
+    return paxos_ingress;
 }
 
 #endif
