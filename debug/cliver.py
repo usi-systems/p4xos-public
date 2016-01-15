@@ -22,8 +22,12 @@ def client(itf):
     hexdump(p)
     sendp(p, iface = itf)
 
+def handle(x):
+    hexdump(x)
+    # x.show()
+
 def server(itf):
-    sniff(iface = itf, prn = lambda x: hexdump(x))
+    sniff(iface = itf, prn = lambda x: handle(x))
 
 def main():
     parser = argparse.ArgumentParser(description='receiver and sender to test P4 program')

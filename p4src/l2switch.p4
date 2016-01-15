@@ -29,15 +29,7 @@ field_list mac_learn_digest {
 }
 
 action mac_learn() {
-    generate_digest(MAC_LEARN_RECEIVER, mac_learn_digest);
-}
-
-table smac {
-    reads {
-        ethernet.srcAddr : exact;
-    }
-    actions {mac_learn; _nop;}
-    size : 512;
+    clone_ingress_pkt_to_egress(MAC_LEARN_RECEIVER, mac_learn_digest);
 }
 
 action forward(port) {
@@ -46,6 +38,19 @@ action forward(port) {
 
 action broadcast() {
     modify_field(intrinsic_metadata.mcast_grp, 1);
+}
+
+action copy_cpu_header() {
+    add_header(cpu_header);
+    modify_field(cpu_header.in_port, standard_metadata.ingress_port);
+}
+
+table smac {
+    reads {
+        ethernet.srcAddr : exact;
+    }
+    actions {mac_learn; _nop;}
+    size : 512;
 }
 
 table dmac {
@@ -72,7 +77,13 @@ table drop_tbl {
     size : 1;
 }
 
+table redirect {
+    actions { copy_cpu_header; }
+    size : 1;
+}
 control egress {
+    apply(redirect);
+
     if(standard_metadata.ingress_port == standard_metadata.egress_port) {
         apply(mcast_src_pruning);
     }

@@ -15,8 +15,13 @@ parser parse_ethernet {
     extract(ethernet);
     return select(latest.etherType) {
         ETHERTYPE_IPV4 : parse_ipv4; 
-        default : ingress;
+        default : parse_cpu_header;
     }
+}
+
+parser parse_cpu_header {
+    extract(cpu_header);
+    return ingress;
 }
 
 parser parse_ipv4 {
