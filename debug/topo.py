@@ -38,7 +38,10 @@ parser.add_argument('--json', help='Path to JSON config file',
 parser.add_argument('--cli', help='Path to BM CLI',
                     type=str, action="store", required=True)
 
+
 args = parser.parse_args()
+args.num_host = 2
+args.num_switch = 2
 
 class MyTopo(Topo):
     def __init__(self, sw_path, json_file,  **opts):
@@ -50,12 +53,25 @@ class MyTopo(Topo):
                       json_path = json_file,
                       thrift_port = _THRIFT_BASE_PORT,
                       pcap_dump = False,
-                      device_id = 123456)
+                      device_id = 1)
 
-        
-        for idx in [1,2, 3, 4]:
-            h = self.addHost('h%d' % (idx), mac="00:00:00:00:00:0{0}".format(idx))
-            self.addLink(h, s1)
+        s2 = self.addSwitch('s2',
+                      sw_path = args.behavioral_exe,
+                      json_path = json_file,
+                      thrift_port = _THRIFT_BASE_PORT + 1,
+                      pcap_dump = False,
+                      device_id = 2)
+
+        h1 = self.addHost('h1', mac="00:00:00:00:00:01")
+        h2 = self.addHost('h2', mac="00:00:00:00:00:02")
+        h3 = self.addHost('h3', mac="00:00:00:00:00:03")
+        # Reserve port 1 for controller
+        self.addLink(h1, s1)
+        self.addLink(h1, s2)
+
+        self.addLink(h2, s1)
+        self.addLink(s1, s2)
+        self.addLink(s2, h3)
 
 
 
@@ -69,8 +85,8 @@ def main():
 
     net.start()
 
-    for n in [1, 2, 3, 4]: 
-        h = net.get('h%d' % n)
+    for idx in range(args.num_host):
+        h = net.get('h%d' % (idx+1))
         for off in ["rx", "tx", "sg"]:
             cmd = "/sbin/ethtool --offload eth0 %s off" % off
             print cmd
@@ -86,15 +102,16 @@ def main():
 
     sleep(2)
 
-    cmd = [args.cli, args.json, str(_THRIFT_BASE_PORT)]
-    with open("commands.txt", "r") as f:
-        print " ".join(cmd)
-        try:
-            output = subprocess.check_output(cmd, stdin = f)
-            print output
-        except subprocess.CalledProcessError as e:
-            print e
-            print e.output
+    for i in range(args.num_switch):
+        cmd = [args.cli, args.json, str(_THRIFT_BASE_PORT + i)]
+        with open("commands.txt", "r") as f:
+            print " ".join(cmd)
+            try:
+                output = subprocess.check_output(cmd, stdin = f)
+                print output
+            except subprocess.CalledProcessError as e:
+                print e
+                print e.output
 
     print "Ready !"
 
