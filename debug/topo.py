@@ -113,7 +113,10 @@ def main():
                 print e
                 print e.output
 
-    print "Ready !"
+    print "NOTICE: The default role of a switch is 0 which is broadcasting every packet.\n" \
+           "To assign role for a switch, run the command below\n" \
+          "register_add role_register <role>\n" \
+          "Where <role> is either 1 for Coordinator or 2 for Acceptor\n"
 
     CLI( net )
     net.stop()

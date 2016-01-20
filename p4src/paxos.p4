@@ -35,10 +35,12 @@ control paxos_ingress {
             apply(sequence_tbl);     /* increase paxos instance number */
         }
         else {
-            apply(round_tbl);
-            if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
-                apply(acceptor_tbl);
-             } else apply(drop_tbl); /* deprecated prepare/promise */
+            if (switch_metadata.role == IS_ACCEPTOR) {
+                apply(round_tbl);
+                if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
+                    apply(acceptor_tbl);
+                 } else apply(drop_tbl); /* deprecated prepare/promise */
+            }
         }
      }
 }
