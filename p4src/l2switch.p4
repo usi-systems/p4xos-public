@@ -30,7 +30,6 @@ field_list mac_learn_digest {
 
 action mac_learn() {
     clone_ingress_pkt_to_egress(MAC_LEARN_RECEIVER, mac_learn_digest);
-    broadcast();
 }
 
 action forward(port) {
