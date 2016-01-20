@@ -1,12 +1,14 @@
-table_set_default mac_table mac_learn
+table_set_default smac_table mac_learn
+table_set_default dmac_table broadcast
+table_set_default encap_tbl encap_cpu_header
 table_set_default mcast_src_pruning _nop
 table_set_default sequence_tbl _nop
 table_set_default role_tbl read_role
 table_add mcast_src_pruning _drop 5 =>
 table_add sequence_tbl increase_instance 3 =>
 mc_mgrp_create 1
-mc_node_create 0 1 2 3 4
+mc_node_create 0 2 3 4
 mc_node_associate 1 0
 register_write role_register 0 1
 register_read role_register 0
-mirroring_add 1024 0
+mirroring_add 1024 1

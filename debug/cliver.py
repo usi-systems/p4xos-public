@@ -23,8 +23,8 @@ def client(itf):
     sendp(p, iface = itf)
 
 def handle(x):
-    hexdump(x)
-    # x.show()
+    # hexdump(x)
+    x.show()
 
 def server(itf):
     sniff(iface = itf, prn = lambda x: handle(x))

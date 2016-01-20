@@ -13,6 +13,29 @@ header_type ethernet_t {
 
 header ethernet_t ethernet;
 
+header_type arp_t {
+    fields {
+        hrd : 16;
+        pro : 16;
+        hln : 8;
+        pln : 8;
+        op  : 16;
+        sha : 48;
+        spa : 32;
+        tha : 48;
+        tpa : 32;
+    }
+}
+header arp_t arp;
+
+header_type cpu_header_t {
+     fields {
+         in_port : 8;
+    }
+}
+
+header cpu_header_t cpu_header;
+
 header_type ipv4_t {
     fields {
         version : 4;
