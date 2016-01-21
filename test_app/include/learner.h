@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 typedef struct Stat {
+    int verbose;
     int mps;
     int64_t avg_lat;
 } Stat;

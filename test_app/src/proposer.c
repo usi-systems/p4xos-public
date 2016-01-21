@@ -30,7 +30,7 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     msg.mstype = 3;
     msg.inst = 10;
     msg.rnd = 31;
-    msg.vrnd = 31;
+    msg.vrnd = 00;
     msg.acpid = 1;
 
     gettime(&msg.ts);

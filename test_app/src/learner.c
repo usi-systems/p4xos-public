@@ -38,8 +38,10 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     // printf("Received %d bytes from %s:%d\n", n, inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
     char buf[BUFSIZE];
     Message m = decode_message(msg);
-    message_to_string(m, buf);
-    // printf("%s" , buf);
+    if (stat->verbose) {
+        message_to_string(m, buf);
+        printf("%s" , buf);
+    }
     stat->mps++;
     struct timespec end;
     gettime(&end);
@@ -47,9 +49,9 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     stat->avg_lat += latency;
 }
 
-int start_learner() {
+int start_learner(int verbose) {
     struct event_base *base = event_base_new();
-    Stat stat = {0, 0.0};
+    Stat stat = {verbose, 0, 0.0};
 
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {

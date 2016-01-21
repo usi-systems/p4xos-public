@@ -10,13 +10,17 @@ int main(int argc, char* argv[]) {
     int role = 0;
     char *hostname;
     int duration = 10000;
-    while ((opt = getopt(argc, argv, "plh:d:")) != -1) {
+    int verbose = 0;
+    while ((opt = getopt(argc, argv, "vplh:d:")) != -1) {
         switch(opt) {
             case 'p':
                 role = 1;
                 break;
             case 'l':
                 role = 2;
+                break;
+            case 'v':
+                verbose = 1;
                 break;
             case 'h':
                 hostname = optarg;
@@ -32,7 +36,7 @@ int main(int argc, char* argv[]) {
         start_proposer(hostname, duration);
     } else if (role == 2) {
         // start learner
-        start_learner();
+        start_learner(verbose);
     } else {
         printf("Role was not set.\n");
     }
