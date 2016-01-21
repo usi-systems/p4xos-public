@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <event2/event.h>
 #include <strings.h>
+#include <inttypes.h>
 #include "message.h"
 #include "learner.h"
 #include "netpaxos_utils.h"
@@ -18,11 +19,11 @@
 void monitor(evutil_socket_t fd, short what, void *arg) {
     Stat *stat = (Stat *) arg;
     if (stat->avg_lat > 0) {
+        // printf("%" PRId64 "\n", stat->avg_lat);
         printf("message/second: %d, average latency: %.2f\n", stat->mps, ((double) stat->avg_lat) / stat->mps);
         stat->mps = 0;
         stat->avg_lat = 0;
     }
-
 }
 
 
@@ -43,9 +44,12 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
         printf("%s" , buf);
     }
     stat->mps++;
-    struct timespec end;
-    gettime(&end);
-    int64_t latency = timediff(&m.ts, &end);
+    struct timeval end, result;
+    gettimeofday(&end, NULL);
+    if (timeval_subtract(&result, &end, &m.ts) < 0) {
+        printf("Latency is negative");
+    }
+    int64_t latency = (int64_t) (result.tv_sec*1000000 + result.tv_usec);
     stat->avg_lat += latency;
 }
 

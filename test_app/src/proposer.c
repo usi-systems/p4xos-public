@@ -33,7 +33,7 @@ void send_cb(evutil_socket_t fd, short what, void *arg)
     msg.vrnd = 00;
     msg.acpid = 1;
 
-    gettime(&msg.ts);
+    gettimeofday(&msg.ts, NULL);
     bzero(msg.value, sizeof(msg.value));
     sprintf(msg.value, "%s", "abcdefgh");
 
