@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "learner.h"
+#include "stat.h"
 #include "proposer.h"
 
 int main(int argc, char* argv[]) {
@@ -33,7 +34,7 @@ int main(int argc, char* argv[]) {
 
     if (role == 1) {
         // start proposer
-        start_proposer(hostname, duration);
+        start_proposer(hostname, duration, verbose);
     } else if (role == 2) {
         // start learner
         start_learner(verbose);

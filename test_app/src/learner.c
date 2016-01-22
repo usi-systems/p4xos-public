@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include "message.h"
 #include "learner.h"
+#include "stat.h"
 #include "netpaxos_utils.h"
 
 /* Here's a callback function that calls loop break */
@@ -20,7 +21,8 @@ void monitor(evutil_socket_t fd, short what, void *arg) {
     Stat *stat = (Stat *) arg;
     if (stat->avg_lat > 0) {
         // printf("%" PRId64 "\n", stat->avg_lat);
-        printf("message/second: %d, average latency: %.2f\n", stat->mps, ((double) stat->avg_lat) / stat->mps);
+        printf("message/second: %d, average latency: %.2f\n",
+                stat->mps, ((double) stat->avg_lat) / stat->mps);
         stat->mps = 0;
         stat->avg_lat = 0;
     }
@@ -51,6 +53,13 @@ void cb_func(evutil_socket_t fd, short what, void *arg)
     }
     int64_t latency = (int64_t) (result.tv_sec*1000000 + result.tv_usec);
     stat->avg_lat += latency;
+
+    // Echo the received message
+    size_t msglen = sizeof(msg);
+    n = sendto(fd, &msg, msglen, 0, (struct sockaddr*) &remote, remote_len);
+    if (n < 0)
+        perror("ERROR in sendto");
+
 }
 
 int start_learner(int verbose) {
@@ -72,7 +81,7 @@ int start_learner(int verbose) {
     struct event *recv_ev, *monitor_ev;
     recv_ev = event_new(base, fd, EV_READ|EV_PERSIST, cb_func, &stat);
     struct timeval timeout = {1, 0};
-    monitor_ev = event_new(base, 0, EV_TIMEOUT|EV_PERSIST, monitor, &stat);
+    monitor_ev = event_new(base, -1, EV_TIMEOUT|EV_PERSIST, monitor, &stat);
     event_add(recv_ev, NULL);
     event_add(monitor_ev, &timeout);
     event_base_dispatch(base);
