@@ -5,23 +5,21 @@ import sys
 import argparse
 import struct
 import os
-import subprocess
+from subprocess import Popen, PIPE
 
 
 def send_command(args, addr, port):
     cmd = [args.cli, args.json, args.thrift_port]
-    with open("tmp.txt", "w+") as f:
-        f.write('table_add dmac_table forward %s => %d\n' % (addr, port))
-        f.write('table_add smac_table _nop %s =>\n' % addr)
-        f.seek(0)
-        print " ".join(cmd)
-        try:
-            output = subprocess.check_output(cmd, stdin = f)
+    r1 = 'table_add dmac_table forward %s => %d' % (addr, port)
+    r2 = 'table_add smac_table _nop %s =>' % addr
+    rules = [r1, r2]
+    for rule in rules:
+        p = Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        output, err = p.communicate(rule)
+        if output:
             print output
-        except subprocess.CalledProcessError as e:
-            print e
-            print e.output
-    os.remove('tmp.txt')
+        if err:
+            print err
 
 def handle(x, args):
     eth = x['Ethernet']

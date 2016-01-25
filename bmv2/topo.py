@@ -26,6 +26,7 @@ import argparse
 from time import sleep
 import os
 import subprocess
+from subprocess import PIPE
 
 _THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 _THRIFT_BASE_PORT = 22222
@@ -132,17 +133,13 @@ def main():
 
     for i in [2, 3, 4]:
         cmd = [args.cli, args.acceptor, str(_THRIFT_BASE_PORT + i)]
-        with open("tmp.txt", "w+") as f:
-            f.write('register_write datapath_id 0 %d' % (i-1))
-            f.seek(0)
-            print " ".join(cmd)
-            try:
-                output = subprocess.check_output(cmd, stdin = f)
-                print output
-            except subprocess.CalledProcessError as e:
-                print e
-                print e.output
-        os.remove('tmp.txt')
+        rule = 'register_write datapath_id 0 %d' % (i-1)
+        p = subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        out, err = p.communicate(rule)
+        if out:
+            print out
+        if err:
+            print err
 
     if args.start_server:
         h1 = net.get('h1')
