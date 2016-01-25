@@ -1,3 +1,4 @@
+#define PAXOS_ENABLE 1
 #include "l2switch.p4"
 #include "coordinator.p4"
 #include "acceptor.p4"
@@ -21,6 +22,12 @@ register role_register {
 
 action read_role() {
     register_read(switch_metadata.role, role_register, 0);
+}
+
+
+table drop_tbl {
+    actions { _drop; }
+    size : 1;
 }
 
 table role_tbl {

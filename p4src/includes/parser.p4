@@ -46,7 +46,9 @@ parser parse_cpu_header{
 parser parse_udp {
     extract(udp);
     return select(udp.dstPort) {
+#if defined(PAXOS_ENABLE)
         PAXOS_PROTOCOL: parse_paxos;
+#endif
         default: ingress;
     }
 }

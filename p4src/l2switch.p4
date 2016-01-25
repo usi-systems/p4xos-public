@@ -1,7 +1,6 @@
 #include "includes/headers.p4"
 #include "includes/parser.p4"
 
-
 header_type intrinsic_metadata_t {
     fields {
         mcast_grp : 4;
@@ -36,8 +35,8 @@ action forward(port) {
     modify_field(standard_metadata.egress_spec, port);
 }
 
-action broadcast() {
-    modify_field(intrinsic_metadata.mcast_grp, 1);
+action broadcast(group) {
+    modify_field(intrinsic_metadata.mcast_grp, group);
 }
 
 action encap_cpu_header() {
@@ -79,10 +78,6 @@ table mcast_src_pruning {
     size : 1;
 }
 
-table drop_tbl {
-    actions { _drop; }
-    size : 1;
-}
 
 table encap_tbl {
     actions {encap_cpu_header; }
