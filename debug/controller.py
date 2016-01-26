@@ -9,7 +9,7 @@ from subprocess import Popen, PIPE
 
 
 def send_command(args, addr, port):
-    cmd = [args.cli, args.json, args.thrift_port]
+    cmd = [args.cli, args.json, args.port]
     r1 = 'table_add dmac_table forward %s => %d' % (addr, port)
     r2 = 'table_add smac_table _nop %s =>' % addr
     rules = [r1, r2]
@@ -37,10 +37,10 @@ def server(args):
 def main():
     parser = argparse.ArgumentParser(description='receiver and sender to test P4 program')
     parser.add_argument("-i", "--interface", default='veth1', help="bind to specified interface")
+    parser.add_argument("-j", "--json", required=True, help="path to json file")
+    parser.add_argument("-p", "--port", default='22222', help="port to P4 reference switch")
     args = parser.parse_args()
     args.cli = "/home/vagrant/bmv2/targets/simple_switch/sswitch_CLI"
-    args.json = "paxos.json"
-    args.thrift_port = "22222"
     server(args)
 
 if __name__=='__main__':
