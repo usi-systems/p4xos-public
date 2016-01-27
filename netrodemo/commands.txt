@@ -1,0 +1,6 @@
+table_set_default dmac_table broadcast 1
+table_set_default mcast_src_pruning _drop
+table_add mcast_src_pruning _drop 5 =>
+mc_mgrp_create 1
+mc_node_create 0 1 2
+mc_node_associate 1 0

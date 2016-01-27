@@ -7,3 +7,4 @@ tests/
 *.log
 *.pyc
 test_app/build
+*DS_Store
