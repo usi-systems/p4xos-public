@@ -112,6 +112,7 @@ parser parse_paxos {
 }
 
 primitive_action paxos_func();
+primitive_action seq_func();
 
 
 action forward(port) {
@@ -128,13 +129,21 @@ table mac_tbl {
     size : 8;
 }
 
+action seq_handle() {
+    seq_func();
+}
+
 action paxos_handle() {
     paxos_func();
 }
 
 table paxos_tbl {
+    reads {
+        paxos.msgtype : exact;
+    }
     actions {
         paxos_handle;
+        seq_handle;
     }
     size : 8;
 }
