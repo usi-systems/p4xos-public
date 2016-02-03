@@ -9,8 +9,9 @@ class Paxos(Packet):
                     IntField("inst", 1),
                     ShortField("rnd", 1),
                     ShortField("vrnd", 0),
-                    IntField("val", 32),
-                    IntField("acpt", 0) ]
+                    IntField("acpt", 0),
+                    IntField("val", 4),
+                    IntField("content", 4567) ]
 
 def normal_packets(fname):
     eth = Ether(dst="08:00:27:10:a8:80")

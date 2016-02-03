@@ -6,20 +6,6 @@ header_type ethernet_t {
     }
 }
 
-header_type arp_t {
-    fields {
-        hrd : 16;
-        pro : 16;
-        hln : 8;
-        pln : 8;
-        op  : 16;
-        sha : 48;
-        spa : 32;
-        tha : 48;
-        tpa : 32;
-    }
-}
-
 header_type ipv4_t {
     fields {
         version : 4;
@@ -36,7 +22,6 @@ header_type ipv4_t {
         dst: 32;
     }
 }
-
 
 header_type udp_t {
     fields {
@@ -55,19 +40,29 @@ header_type paxos_t {
         inst    : 32;
         rnd     : 16;
         vrnd    : 16;
-        val     : 32;
         acpt    : 32;
+        valsize : 32;  // <---- content length is set here
+    }
+}
+
+/*
+ * 1. Could we set content field to a variable length field?
+ * The content length is the value of valsize field of Paxos header.
+ * 2. Does SDK allow the width of content greater than 32?
+ */
+header_type value_t {
+    fields {
+        content : 32;
     }
 }
 
 header ethernet_t ethernet;
-header arp_t arp;
 header ipv4_t ipv4;
 header udp_t udp;
 header paxos_t paxos;
+header value_t value;
 
 
-#define ETHERTYPE_ARP 0x0806
 #define ETHERTYPE_IPV4 0x0800
 #define UDP_PROTOCOL 0x11
 #define PAXOS_PROTOCOL 0x8888
@@ -79,15 +74,9 @@ parser start {
 parser parse_ethernet {
     extract(ethernet);
     return select(latest.etherType) {
-        ETHERTYPE_ARP : parse_arp;
         ETHERTYPE_IPV4 : parse_ipv4; 
         default : ingress;
     }
-}
-
-parser parse_arp {
-    extract(arp);
-    return ingress;
 }
 
 parser parse_ipv4 {
@@ -108,6 +97,14 @@ parser parse_udp {
 
 parser parse_paxos {
     extract(paxos);
+    return select(paxos.valsize) {
+        0 : ingress;
+        default : parse_value;
+    }
+}
+
+parser parse_value {
+    extract(value);
     return ingress;
 }
 
@@ -148,9 +145,16 @@ table paxos_tbl {
     size : 8;
 }
 
-
 control ingress {
     apply(mac_tbl);
+
+    /*
+     *  ISSUE: "valid" operation is not supported
+     * if valid(paxos) {
+     *  apply(paxos_tbl);
+     * }
+     */
+
     apply(paxos_tbl);
 }
 
