@@ -51,12 +51,12 @@ header_type udp_t {
 
 header_type paxos_t {
     fields {
-        instance : 32;
-        msgtype : 16;
-        round : 16; 
-        vround : 16; 
-        value : 16;
-        acceptor: 64;
+        msgtype : 32;
+        inst    : 32;
+        rnd     : 16;
+        vrnd    : 16;
+        val     : 32;
+        acpt    : 32;
     }
 }
 
