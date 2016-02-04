@@ -2,13 +2,14 @@
 
 // Set MAX_INST 10 for debugging.  MAX: 2^32 (Paxos inst width)
 #define MAX_INST 10
-
+#define MAJORITY 1
 #define SWITCH_ID 0x12345678
 __shared uint32_t cur_instance;
 __shared uint32_t pkt_inst;
 __shared uint32_t rnds[MAX_INST];
 __shared uint32_t vrnds[MAX_INST];
 __shared uint32_t valsizes[MAX_INST];
+__shared uint32_t majorities[MAX_INST];
 
 /*
  * an array of type string to store the value (below).
@@ -67,6 +68,50 @@ int pif_plugin_paxos_phase1a(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     paxos->msgtype = Phase1B;
     value->content = values[pkt_inst];
 
+    return PIF_PLUGIN_RETURN_FORWARD;
+}
+
+ // Assuming the coordinator already send phase1A with the round number stored in rnds array
+ // The coordinator receive some value from a client and store in values array.
+int pif_plugin_paxos_phase1b(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
+{
+    PIF_PLUGIN_paxos_T *paxos;
+    PIF_PLUGIN_value_T *value;
+
+    if (! pif_plugin_hdr_paxos_present(headers)) {
+        return PIF_PLUGIN_RETURN_DROP;
+    }
+
+    if (! pif_plugin_hdr_value_present(headers)) {
+        return PIF_PLUGIN_RETURN_DROP;
+    }
+
+    paxos = pif_plugin_hdr_get_paxos(headers);
+    value = pif_plugin_hdr_get_value(headers);
+
+    pkt_inst = paxos->inst;
+
+    if (paxos->rnd != rnds[pkt_inst]) {
+        return PIF_PLUGIN_RETURN_DROP;
+    }
+
+    if (paxos->vrnd > vrnds[pkt_inst]) {
+        valsizes[pkt_inst] = paxos->valsize;
+        values[pkt_inst] = value->content;
+    }
+
+    majorities[pkt_inst]++;
+    // count < > MAJORITY: Sending Phase2A only when Reaching Majority, not after that.
+    if (majorities[pkt_inst] != MAJORITY) {
+        return PIF_PLUGIN_RETURN_DROP;
+    }
+
+    // Craft Phase2A message
+    // inst and rnd are already equal to the ones stored in the switch state
+    paxos->msgtype = Phase2A;
+    paxos->valsize = valsizes[pkt_inst];
+    value->content = values[pkt_inst];
+    // Send phase2A message to acceptors
     return PIF_PLUGIN_RETURN_FORWARD;
 }
 

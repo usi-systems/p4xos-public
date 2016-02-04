@@ -110,6 +110,7 @@ parser parse_value {
 
 primitive_action seq_func();
 primitive_action paxos_phase1a();
+primitive_action paxos_phase1b();
 primitive_action paxos_phase2a();
 
 
@@ -134,14 +135,19 @@ action increase_seq() {
     seq_func();
 }
 
-action handle_phase2a() {
-    paxos_phase2a();
-}
-
 action handle_phase1a() {
     add_header(value);
     paxos_phase1a();
 }
+
+action handle_phase1b() {
+    paxos_phase1b();
+}
+
+action handle_phase2a() {
+    paxos_phase2a();
+}
+
 
 table paxos_tbl {
     reads {
@@ -150,6 +156,7 @@ table paxos_tbl {
     actions {
         increase_seq;
         handle_phase1a;
+        handle_phase1b;
         handle_phase2a;
         _no_op;
     }
