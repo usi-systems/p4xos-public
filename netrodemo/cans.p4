@@ -108,8 +108,9 @@ parser parse_value {
     return ingress;
 }
 
-primitive_action paxos_func();
 primitive_action seq_func();
+primitive_action paxos_phase1a();
+primitive_action paxos_phase2a();
 
 
 action forward(port) {
@@ -126,12 +127,20 @@ table mac_tbl {
     size : 8;
 }
 
-action seq_handle() {
+action _no_op() {
+}
+
+action increase_seq() {
     seq_func();
 }
 
-action paxos_handle() {
-    paxos_func();
+action handle_phase2a() {
+    paxos_phase2a();
+}
+
+action handle_phase1a() {
+    add_header(value);
+    paxos_phase1a();
 }
 
 table paxos_tbl {
@@ -139,22 +148,16 @@ table paxos_tbl {
         paxos.msgtype : exact;
     }
     actions {
-        paxos_handle;
-        seq_handle;
+        increase_seq;
+        handle_phase1a;
+        handle_phase2a;
+        _no_op;
     }
     size : 8;
 }
 
 control ingress {
     apply(mac_tbl);
-
-    /*
-     *  ISSUE: "valid" operation is not supported
-     * if valid(paxos) {
-     *  apply(paxos_tbl);
-     * }
-     */
-
     apply(paxos_tbl);
 }
 
