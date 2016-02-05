@@ -36,12 +36,12 @@ header_type udp_t {
 
 header_type paxos_t {
     fields {
-        msgtype : 32;
-        inst    : 32;
-        rnd     : 16;
-        vrnd    : 16;
+        inst    : 16;
+        rnd     : 8;
+        vrnd    : 8;
         acpt    : 32;
-        valsize : 32;  // <---- content length is set here
+        msgtype : 3;
+        valsize : 13;  // <---- content length is set here
     }
 }
 

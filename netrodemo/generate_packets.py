@@ -6,16 +6,16 @@ import argparse
 
 class Value(Packet):
     name = "PaxosValue"
-    fields_desc = [ IntField("content", 4567) ]
+    fields_desc = [ XIntField("content", 0x11223344) ]
 
 class Paxos(Packet):
     name ="PaxosPacket "
-    fields_desc = [  IntField("msgtype", 3),
-                    IntField("inst", 1),
-                    ShortField("rnd", 1),
-                    ShortField("vrnd", 0),
-                    IntField("acpt", 0),
-                    IntField("valsize", 4) ]
+    fields_desc =[  XShortField("inst", 1),
+                    XByteField("rnd", 1),
+                    XByteField("vrnd", 0),
+                    XIntField("acpt", 0),
+                    XBitField("msgtype", 0x3, 3),
+                    XBitField("valsize", 0x4, 13) ]
 
 def normal_packets(fname):
     eth = Ether(dst="08:00:27:10:a8:80")
@@ -29,22 +29,19 @@ def normal_packets(fname):
     # sendp(pkts, iface = sys.argv[1])
     wrpcap("%s" % fname, pkts)
 
-def paxos_packet(args):
+def paxos_packet(typ, inst, rnd, vrnd, valsize, value):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="10.0.0.1", dst="10.0.0.2")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(msgtype = args.typ, inst=args.inst, rnd=args.rnd, vrnd=args.vrnd,
-                                valsize=args.valsize)
+    pkt = eth / ip / udp / Paxos(msgtype=typ, inst=inst, rnd=rnd, vrnd=vrnd, valsize=valsize)
     if (args.valsize > 0):
-        pkt = pkt / Value(content = args.value)
+        pkt = pkt / Value(content = value)
+    return pkt
 
-    pkt.show()
-    wrpcap("%s" % args.output, pkt)
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')
-    parser.add_argument('-t', '--typ', help='Paxos message Type', type=int, default=0)
     parser.add_argument('-i', '--inst', help='Paxos instance', type=int, default=0)
     parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
     parser.add_argument('-a', '--vrnd', help='Paxos value round', type=int, default=0)
@@ -53,4 +50,9 @@ if __name__=='__main__':
     parser.add_argument('-o', '--output', help='output pcap file', type=str, required=True)
     args = parser.parse_args()
 
-    paxos_packet(args)
+    p0  = paxos_packet(0, args.inst, args.rnd, args.vrnd, args.valsize, args.value)
+    p2a = paxos_packet(3, args.inst, args.rnd, args.vrnd, args.valsize, args.value)
+    p1a = paxos_packet(1, args.inst, args.rnd, args.vrnd, 0, 0)
+
+    pkts = [p0, p2a, p1a]
+    wrpcap("%s" % args.output, pkts)
