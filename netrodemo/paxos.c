@@ -1,21 +1,15 @@
 #include <pif_plugin.h>
 
-// Set MAX_INST 10 for debugging.  MAX: 2^32 (Paxos inst width)
-#define MAX_INST 10
+#define MAX_INST 65535
 #define MAJORITY 1
 #define SWITCH_ID 0x12345678
 __shared uint32_t cur_instance;
 __shared uint32_t pkt_inst;
-__shared uint32_t rnds[MAX_INST];
-__shared uint32_t vrnds[MAX_INST];
-__shared uint32_t valsizes[MAX_INST];
-__shared uint32_t majorities[MAX_INST];
-
-/*
- * an array of type string to store the value (below).
- * The element size may be large, where to should store the values (SRAM, DRAM,...)?
- */
-__shared uint32_t values[MAX_INST];
+__declspec(mem export) uint32_t rnds[MAX_INST];
+__declspec(mem export) uint32_t vrnds[MAX_INST];
+__declspec(mem export) uint16_t valsizes[MAX_INST];
+__declspec(mem export) uint16_t majorities[MAX_INST];
+__declspec(mem export) uint32_t values[MAX_INST];
 
 enum Paxos {
     Phase0 = 0,
@@ -71,8 +65,6 @@ int pif_plugin_paxos_phase1a(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     return PIF_PLUGIN_RETURN_FORWARD;
 }
 
- // Assuming the coordinator already send phase1A with the round number stored in rnds array
- // The coordinator receive some value from a client and store in values array.
 int pif_plugin_paxos_phase1b(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
 {
     PIF_PLUGIN_paxos_T *paxos;
@@ -115,11 +107,6 @@ int pif_plugin_paxos_phase1b(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     return PIF_PLUGIN_RETURN_FORWARD;
 }
 
-/*
- * Can we get the remaining packet payload after all parsed headers?
- * For example, after parsing, we have ethernet, ipv4, paxos headers.
- * Can we extract the bytes after the paxos header ?
- */
 int pif_plugin_paxos_phase2a(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
 {
     PIF_PLUGIN_paxos_T *paxos;

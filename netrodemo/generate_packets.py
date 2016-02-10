@@ -10,12 +10,12 @@ class Value(Packet):
 
 class Paxos(Packet):
     name ="PaxosPacket "
-    fields_desc =[  XShortField("inst", 1),
-                    XByteField("rnd", 1),
-                    XByteField("vrnd", 0),
-                    XIntField("acpt", 0),
-                    XBitField("msgtype", 0x3, 3),
-                    XBitField("valsize", 0x4, 13) ]
+    fields_desc =[  XIntField("inst", 0x1),
+                    XShortField("rnd", 0x1),
+                    XShortField("vrnd", 0x0),
+                    XIntField("acpt", 0x0),
+                    XShortField("msgtype", 0x3),
+                    XShortField("valsize", 0x4) ]
 
 def normal_packets(fname):
     eth = Ether(dst="08:00:27:10:a8:80")
@@ -46,7 +46,7 @@ if __name__=='__main__':
     parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
     parser.add_argument('-a', '--vrnd', help='Paxos value round', type=int, default=0)
     parser.add_argument('-s', '--valsize', help='Paxos value round', type=int, default=4)
-    parser.add_argument('-v', '--value', help='Paxos value', type=int, default=0x1234)
+    parser.add_argument('-v', '--value', help='Paxos value', type=int, default=0x11223344)
     parser.add_argument('-o', '--output', help='output pcap file', type=str, required=True)
     args = parser.parse_args()
 
