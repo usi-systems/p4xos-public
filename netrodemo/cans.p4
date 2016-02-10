@@ -36,12 +36,12 @@ header_type udp_t {
 
 header_type paxos_t {
     fields {
-        inst    : 16;
-        rnd     : 8;
-        vrnd    : 8;
+        inst    : 32;
+        rnd     : 16;
+        vrnd    : 16;
         acpt    : 32;
-        msgtype : 3;
-        valsize : 13;  // <---- content length is set here
+        msgtype : 16;
+        valsize : 16;
     }
 }
 
@@ -120,7 +120,7 @@ action forward(port) {
 
 table mac_tbl {
     reads {
-        ethernet.dstAddr : exact;
+        standard_metadata.ingress_port : exact;
     }
     actions {
         forward;
@@ -167,4 +167,3 @@ control ingress {
     apply(mac_tbl);
     apply(paxos_tbl);
 }
-
