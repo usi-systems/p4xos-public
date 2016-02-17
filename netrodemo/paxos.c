@@ -1,6 +1,6 @@
 #include <pif_plugin.h>
 
-#define MAX_INST 65535
+#define MAX_INST 400000
 #define MAJORITY 1
 #define SWITCH_ID 0x12345678
 __shared uint32_t cur_instance;
@@ -28,6 +28,10 @@ int pif_plugin_seq_func(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     }
 
     paxos = pif_plugin_hdr_get_paxos(headers);
+    if (cur_instance >= MAX_INST) {
+        // TODO: Export to disk and wrap around
+        cur_instance -= MAX_INST;
+    }
     paxos->inst = cur_instance;
     paxos->msgtype = Phase2A;
     cur_instance++;

@@ -53,6 +53,7 @@ if __name__=='__main__':
     p0  = paxos_packet(0, args.inst, args.rnd, args.vrnd, args.valsize, args.value)
     p2a = paxos_packet(3, args.inst, args.rnd, args.vrnd, args.valsize, args.value)
     p1a = paxos_packet(1, args.inst, args.rnd, args.vrnd, 0, 0)
+    p1b = paxos_packet(2, args.inst, args.rnd, args.vrnd, 4, 0xAABBCCDD)
 
-    pkts = [p0, p2a, p1a]
+    pkts = [p1b]
     wrpcap("%s" % args.output, pkts)
