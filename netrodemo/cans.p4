@@ -45,11 +45,7 @@ header_type paxos_t {
     }
 }
 
-/*
- * 1. Could we set content field to a variable length field?
- * The content length is the value of valsize field of Paxos header.
- * 2. Does SDK allow the width of content greater than 32?
- */
+// The content length is the value of valsize field of Paxos header.
 header_type value_t {
     fields {
         content : 32;
@@ -165,5 +161,6 @@ table paxos_tbl {
 
 control ingress {
     apply(mac_tbl);
+    // TODO: check valid(paxos)
     apply(paxos_tbl);
 }
