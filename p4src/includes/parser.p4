@@ -6,7 +6,7 @@
 #define ETHERTYPE_ARP 0x0806
 #define ETHERTYPE_IPV4 0x0800
 #define UDP_PROTOCOL 0x11
-#define P4_PROTOCOL 12345
+#define P4_PROTOCOL 0x8F
 #define PAXOS_PROTOCOL 0x8888
 
 parser start {
