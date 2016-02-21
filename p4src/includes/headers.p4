@@ -28,14 +28,6 @@ header_type arp_t {
 }
 header arp_t arp;
 
-header_type cpu_header_t {
-     fields {
-         in_port : 8;
-    }
-}
-
-header cpu_header_t cpu_header;
-
 header_type ipv4_t {
     fields {
         version : 4;
@@ -92,7 +84,6 @@ header_type udp_t {
 }
 
 header udp_t udp;
-
 
 field_list udp_checksum_list {
     ipv4.srcAddr;
