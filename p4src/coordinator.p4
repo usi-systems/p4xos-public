@@ -7,6 +7,11 @@ register instance_register {
     instance_count : 1;
 }
 
+
+action _nop() {
+
+}
+
 //  This function read num_inst stored in the register and copy it to
 //  the current packet. Then it increased the num_inst by 1, and write
 //  it back to the register
