@@ -1,0 +1,94 @@
+{
+    "tables": {
+        "paxos_tbl": {
+            "rules": [
+                {
+                    "action": {
+                        "type": "increase_seq"
+                    }, 
+                    "name": "inc_seq", 
+                    "match": {
+                        "paxos.msgtype": {
+                            "value": "0"
+                        }
+                    }
+                }, 
+                {
+                    "action": {
+                        "type": "handle_phase1a"
+                    }, 
+                    "name": "phase1a", 
+                    "match": {
+                        "paxos.msgtype": {
+                            "value": "1"
+                        }
+                    }
+                }, 
+                {
+                    "action": {
+                        "type": "handle_phase1b"
+                    }, 
+                    "name": "phase1b", 
+                    "match": {
+                        "paxos.msgtype": {
+                            "value": "2"
+                        }
+                    }
+                }, 
+                {
+                    "action": {
+                        "type": "handle_phase2a"
+                    }, 
+                    "name": "phase2a", 
+                    "match": {
+                        "paxos.msgtype": {
+                            "value": "3"
+                        }
+                    }
+                }
+            ], 
+            "default_rule": {
+                "action": {
+                    "type": "_no_op"
+                }, 
+                "name": "Default"
+            }
+        }, 
+        "mac_tbl": {
+            "rules": [
+                {
+                    "action": {
+                        "type": "forward", 
+                        "data": {
+                            "port": {
+                                "value": "v0.0"
+                            }
+                        }
+                    }, 
+                    "name": "net_to_host", 
+                    "match": {
+                        "standard_metadata.ingress_port": {
+                            "value": "p0"
+                        }
+                    }
+                }, 
+                {
+                    "action": {
+                        "type": "forward", 
+                        "data": {
+                            "port": {
+                                "value": "p0"
+                            }
+                        }
+                    }, 
+                    "name": "host_to_net", 
+                    "match": {
+                        "standard_metadata.ingress_port": {
+                            "value": "v0.0"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -45,7 +45,6 @@ header_type paxos_t {
     }
 }
 
-// The content length is the value of valsize field of Paxos header.
 header_type value_t {
     fields {
         content : 32;
@@ -94,14 +93,14 @@ parser parse_udp {
 parser parse_paxos {
     extract(paxos);
     return select(paxos.valsize) {
-        0 : ingress;
+        0 : paxos_ctl;
         default : parse_value;
     }
 }
 
 parser parse_value {
     extract(value);
-    return ingress;
+    return paxos_ctl;
 }
 
 primitive_action seq_func();
@@ -161,6 +160,9 @@ table paxos_tbl {
 
 control ingress {
     apply(mac_tbl);
-    // TODO: check valid(paxos)
+}
+
+control paxos_ctl {
+    apply(mac_tbl);
     apply(paxos_tbl);
 }

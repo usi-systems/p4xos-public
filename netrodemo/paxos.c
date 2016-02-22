@@ -2,9 +2,9 @@
 
 #define MAX_INST 400000
 #define MAJORITY 1
-#define SWITCH_ID 0x12345678
-__shared uint32_t cur_instance;
-__shared uint32_t pkt_inst;
+#define SWITCH_ID 0x00000001
+__declspec(mem export) uint32_t cur_instance;
+__declspec(mem export) uint32_t pkt_inst;
 __declspec(mem export) uint32_t rnds[MAX_INST];
 __declspec(mem export) uint32_t vrnds[MAX_INST];
 __declspec(mem export) uint16_t valsizes[MAX_INST];
@@ -28,10 +28,6 @@ int pif_plugin_seq_func(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     }
 
     paxos = pif_plugin_hdr_get_paxos(headers);
-    if (cur_instance >= MAX_INST) {
-        // TODO: Export to disk and wrap around
-        cur_instance -= MAX_INST;
-    }
     paxos->inst = cur_instance;
     paxos->msgtype = Phase2A;
     cur_instance++;
