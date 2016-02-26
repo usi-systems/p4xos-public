@@ -39,23 +39,17 @@ header_type paxos_t {
         inst    : 32;
         rnd     : 16;
         vrnd    : 16;
-        acpt    : 32;
+        acpt    : 16;
         msgtype : 16;
-        valsize : 16;
+        val     : 32;
     }
 }
 
-header_type value_t {
-    fields {
-        content : 32;
-    }
-}
 
 header ethernet_t ethernet;
 header ipv4_t ipv4;
 header udp_t udp;
 header paxos_t paxos;
-header value_t value;
 
 
 #define ETHERTYPE_IPV4 0x0800
@@ -92,20 +86,11 @@ parser parse_udp {
 
 parser parse_paxos {
     extract(paxos);
-    return select(paxos.valsize) {
-        0 : paxos_ctl;
-        default : parse_value;
-    }
-}
-
-parser parse_value {
-    extract(value);
     return paxos_ctl;
 }
 
 primitive_action seq_func();
 primitive_action paxos_phase1a();
-primitive_action paxos_phase1b();
 primitive_action paxos_phase2a();
 
 
@@ -131,12 +116,7 @@ action increase_seq() {
 }
 
 action handle_phase1a() {
-    add_header(value);
     paxos_phase1a();
-}
-
-action handle_phase1b() {
-    paxos_phase1b();
 }
 
 action handle_phase2a() {
@@ -151,7 +131,6 @@ table paxos_tbl {
     actions {
         increase_seq;
         handle_phase1a;
-        handle_phase1b;
         handle_phase2a;
         _no_op;
     }

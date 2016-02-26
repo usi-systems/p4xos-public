@@ -3,10 +3,18 @@
 from scapy.all import *
 import sys
 import argparse
+import datetime
 
-class Value(Packet):
-    name = "PaxosValue"
-    fields_desc = [ XIntField("content", 0x00) ]
+class Tutime(Packet):
+    name ="PaxosPacket "
+    fields_desc =[IntField("hour", 0x0),
+                    IntField("minute", 0x0),
+                    IntField("second", 0x0),
+                    IntField("microsecond", 0x0) ]
+
+def newTime(ts):
+    ts = Tutime(hour=ts.hour, minute=ts.minute, second=ts.second, microsecond=ts.microsecond)
+    return ts
 
 
 class Paxos(Packet):
@@ -14,29 +22,39 @@ class Paxos(Packet):
     fields_desc =[  XIntField("inst", 0x1),
                     XShortField("rnd", 0x1),
                     XShortField("vrnd", 0x0),
-                    XIntField("acpt", 0x0),
+                    XShortField("acpt", 0x0),
                     XShortField("msgtype", 0x3),
-                    XShortField("valsize", 0x4) ]
+                    XIntField("val", 0x11223344) ]
 
 
-def paxos_packet(typ, inst, rnd, vrnd, valsize, value):
+def paxos_packet(typ, inst, rnd, vrnd, value):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="10.0.0.1", dst="10.0.0.2")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(msgtype=typ, inst=inst, rnd=rnd, vrnd=vrnd, valsize=valsize)
-    if (args.valsize > 0):
-        pkt = pkt / Value(content = value)
+    pkt = eth / ip / udp / Paxos(msgtype=typ, inst=inst, rnd=rnd, vrnd=vrnd, val=value)
     return pkt
 
 def client(args):
-    pkt  = paxos_packet(args.pxtype, args.inst, args.rnd, args.vrnd, args.valsize, args.value)
-    sendp(pkt, iface= args.interface, inter=args.inter, count=args.count)
+    paxos  = paxos_packet(args.pxtype, args.inst, args.rnd, args.vrnd, args.value)
+    now = datetime.datetime.now()
+    start = newTime(now)
+    pkt = paxos / start
+    sendp(pkt, iface= args.interface, count=args.count, inter=args.inter)
 
 def handle(x):
+    if sys.getsizeof(x) != 64:
+        return
+
     pax = Paxos(x['Raw'].load)
-    val = Value(pax['Raw'].load)
-    # pax.show()
-    print pax.inst
+    if (pax.msgtype < 0 or pax.msgtype > 4):
+        return
+    start = Tutime(pax['Raw'].load)
+    end_time = datetime.datetime.now()
+    start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, start.hour, start.minute, start.second, start.microsecond)
+    dur =  end_time - start_time
+    print dur.total_seconds()
+
+
 
 def server(itf):
     sniff(iface = itf, prn = lambda x: handle(x))
@@ -44,13 +62,12 @@ def server(itf):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')
     parser.add_argument('--inst', help='Paxos instance', type=int, default=0)
-    parser.add_argument('--valsize', help='Paxos value round', type=int, default=4)
     parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
     parser.add_argument('-a', '--vrnd', help='Paxos value round', type=int, default=0)
     parser.add_argument('-t', '--pxtype', help='Paxos msg type', type=int, default=0)
     parser.add_argument('--count', help='Number of packets to send', type=int, default=1)
     parser.add_argument('--inter', help='Interval between sending', type=float, default=1)
-    parser.add_argument('-v', '--value', help='Paxos value', type=int)
+    parser.add_argument('-v', '--value', help='Paxos value', type=int, default=0x11223344)
     parser.add_argument("-s", "--server", help="run as server", action="store_true")
     parser.add_argument("-c", "--client", help="run as client", action="store_true")
     parser.add_argument("-i", "--interface", required=True, help="bind to specified interface")
