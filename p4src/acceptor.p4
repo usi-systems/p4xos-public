@@ -37,10 +37,6 @@ register values_register {
 }
 
 
-action _drop() {
-    drop();
-}
-
 // Copying Paxos-fields from the register to meta-data structure. The index
 // (i.e., paxos instance number) is read from the current packet. Could be
 // problematic if the instance exceeds the bounds of the register.

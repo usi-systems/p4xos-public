@@ -6,6 +6,7 @@
 #define ETHERTYPE_ARP 0x0806
 #define ETHERTYPE_IPV4 0x0800
 #define UDP_PROTOCOL 0x11
+#define ETHERTYPE_IPV6 0x86dd
 #define PAXOS_PROTOCOL 0x8888
 
 parser start {
@@ -17,6 +18,7 @@ parser parse_ethernet {
     return select(latest.etherType) {
         ETHERTYPE_ARP : parse_arp;
         ETHERTYPE_IPV4 : parse_ipv4; 
+        ETHERTYPE_IPV6 : parse_ipv6;
         default : ingress;
     }
 }
@@ -32,6 +34,11 @@ parser parse_ipv4 {
         UDP_PROTOCOL : parse_udp;
         default : ingress;
     }
+}
+
+parser parse_ipv6 {
+    extract(ipv6);
+    return ingress;
 }
 
 parser parse_udp {

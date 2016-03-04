@@ -25,11 +25,6 @@ action read_role() {
 }
 
 
-table drop_tbl {
-    actions { _drop; }
-    size : 1;
-}
-
 table role_tbl {
     actions { read_role; }
 }

@@ -74,6 +74,21 @@ calculated_field ipv4.hdrChecksum  {
     update ipv4_checksum;
 }
 
+header_type ipv6_t {
+    fields {
+        version : 4;
+        trafficClass : 8;
+        flowLabel : 20;
+        payloadLen : 16;
+        nextHdr : 8;
+        hopLimit : 8;
+        srcAddr : 128;
+        dstAddr : 128;
+    }
+}
+
+header ipv6_t ipv6;
+
 header_type udp_t {
     fields {
         srcPort : 16;
