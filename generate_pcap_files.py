@@ -16,7 +16,7 @@ class Paxos(Packet):
                     XIntField("instance", 0x1),
                     XShortField("round", 0x1),
                     XShortField("vround", 0x0),
-                    XShortField("acceptor", 0x0),
+                    XIntField("acceptor", 0x0),
                     XShortField("msgtype", 0x3),
                 ]
 
