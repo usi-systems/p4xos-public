@@ -36,29 +36,30 @@ register values_register {
     instance_count : INSTANCE_COUNT;
 }
 
+
 // Copying Paxos-fields from the register to meta-data structure. The index
 // (i.e., paxos instance number) is read from the current packet. Could be
 // problematic if the instance exceeds the bounds of the register.
 action read_round() {
-    register_read(paxos_packet_metadata.round, rounds_register, paxos.instance); 
+    register_read(paxos_packet_metadata.round, rounds_register, paxos.inst); 
 }
 
 // Receive Paxos 1A message, send Paxos 1B message
 action handle_1a() {
-    modify_field(paxos.msgtype, PAXOS_1B);                            // Create a 1B message
-    register_read(paxos.vround, vrounds_register, paxos.instance);    // paxos.vround = vrounds_register[paxos.instance]
-    register_read(paxos.value, values_register, paxos.instance);      // paxos.value  = values_register[paxos.instance]
-    register_read(paxos.acceptor, datapath_id, 0);                    // paxos.acceptor = datapath_id
-    register_write(rounds_register, paxos.instance, paxos.round);     // rounds_register[paxos.instance] = paxos.round
+    modify_field(paxos.msgtype, PAXOS_1B);                          // Create a 1B message
+    register_read(paxos.vrnd, vrounds_register, paxos.inst);        // paxos.vrnd = vrounds_register[paxos.inst]
+    register_read(paxos.paxosval, values_register, paxos.inst);     // paxos.paxosval  = values_register[paxos.inst]
+    register_read(paxos.acptid, datapath_id, 0);                    // paxos.acptid = datapath_id
+    register_write(rounds_register, paxos.inst, paxos.rnd);         // rounds_register[paxos.inst] = paxos.rnd
 }
 
 // Receive Paxos 2A message, send Paxos 2B message
 action handle_2a() {
-    modify_field(paxos.msgtype, PAXOS_2B);				              // Create a 2B message
-    register_write(rounds_register, paxos.instance, paxos.round);     // rounds_register[paxos.instance] = paxos.round
-    register_write(vrounds_register, paxos.instance, paxos.round);    // vrounds_register[paxos.instance] = paxos.round
-    register_write(values_register, paxos.instance, paxos.value);     // values_register[paxos.instance] = paxos.value
-    register_read(paxos.acceptor, datapath_id, 0);                    // paxos.acceptor = datapath_id
+    modify_field(paxos.msgtype, PAXOS_2B);				            // Create a 2B message
+    register_write(rounds_register, paxos.inst, paxos.rnd);         // rounds_register[paxos.inst] = paxos.rnd
+    register_write(vrounds_register, paxos.inst, paxos.rnd);        // vrounds_register[paxos.inst] = paxos.rnd
+    register_write(values_register, paxos.inst, paxos.paxosval);    // values_register[paxos.inst] = paxos.paxosval
+    register_read(paxos.acptid, datapath_id, 0);                    // paxos.acptid = datapath_id
 }
 
 table round_tbl {

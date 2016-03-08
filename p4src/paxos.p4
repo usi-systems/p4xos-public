@@ -1,5 +1,6 @@
 #define PAXOS_ENABLE 1
-#include "l2switch.p4"
+#include "includes/headers.p4"
+#include "includes/parser.p4"
 #include "coordinator.p4"
 #include "acceptor.p4"
 
@@ -25,29 +26,54 @@ action read_role() {
 }
 
 
+table role_tbl {
+    actions { read_role; }
+}
+
+action _drop() {
+    drop();
+}
+
+action forward(port) {
+    modify_field(standard_metadata.egress_spec, port);
+}
+
 table drop_tbl {
     actions { _drop; }
     size : 1;
 }
 
-table role_tbl {
-    actions { read_role; }
+table dmac_tbl {
+    reads {
+        ethernet.dstAddr : exact;
+    }
+    actions {
+        forward;
+    }
+    size : 16;
 }
 
-control paxos_ingress {
-    ingress();
-    if (valid(paxos)) {          /* check if we have a paxos packet */
-        apply(role_tbl);
-        if (switch_metadata.role == IS_COORDINATOR) {
-            apply(sequence_tbl);     /* increase paxos instance number */
-        }
-        else {
-            if (switch_metadata.role == IS_ACCEPTOR) {
-                apply(round_tbl);
-                if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
-                    apply(acceptor_tbl);
-                 } else apply(drop_tbl); /* deprecated prepare/promise */
+
+control ingress {
+    if (valid(ipv4)) {
+        apply(dmac_tbl);
+
+        if (valid(paxos)) {          /* check if we have a paxos packet */
+            apply(role_tbl);
+            if (switch_metadata.role == IS_COORDINATOR) {
+                apply(sequence_tbl);     /* increase paxos instance number */
             }
-        }
-     }
+            else {
+                if (switch_metadata.role == IS_ACCEPTOR) {
+                    apply(round_tbl);
+                    if (paxos_packet_metadata.round <= paxos.rnd) { /* if the round number is greater than one you've seen before */
+                        apply(acceptor_tbl);
+                     }
+                     /* else apply(drop_tbl); /* deprecated prepare/promise */
+                }
+            }
+         }
+    } else if (valid(ipv6)) {
+        apply(drop_tbl);
+    }
 }

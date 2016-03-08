@@ -3,22 +3,22 @@
 
 // Headers for Paxos
 
-#define MSGTYPE_SIZE 8
-#define ROUND_SIZE 8
-#define INSTANCE_SIZE 16
-#define VALUE_SIZE 512
-#define DATAPATH_SIZE 64
+#define INSTANCE_SIZE 32
+#define ROUND_SIZE 16
+#define DATAPATH_SIZE 32
+#define MSGTYPE_SIZE 16
+#define VALUE_SIZE 256
 
-#define INSTANCE_COUNT 65536 // change according to INSTANCE_SIZE (=2^INSTANCE_SIZE)
+#define INSTANCE_COUNT 65536
 
 header_type paxos_t {
     fields {
-        msgtype : MSGTYPE_SIZE;         // indicates the message type e.g., 1A, 1B, etc.
-        instance : INSTANCE_SIZE;    // instance number
-        round : ROUND_SIZE;        // round number
-        vround : ROUND_SIZE;       // round in which an acceptor casted a vote
-        acceptor: DATAPATH_SIZE;
-        value : VALUE_SIZE;       // the value the acceptor voted for
+        inst     : INSTANCE_SIZE; // instance number
+        rnd      : ROUND_SIZE;       // round number
+        vrnd     : ROUND_SIZE;      // round in which an acceptor casted a vote
+        acptid   : DATAPATH_SIZE;  // Switch ID
+        msgtype  : MSGTYPE_SIZE;   // indicates the message type e.g., 1A, 1B, etc.
+        paxosval : VALUE_SIZE;       // the value the acceptor voted for
     }
 }
 

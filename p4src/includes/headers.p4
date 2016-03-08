@@ -28,14 +28,6 @@ header_type arp_t {
 }
 header arp_t arp;
 
-header_type cpu_header_t {
-     fields {
-         in_port : 8;
-    }
-}
-
-header cpu_header_t cpu_header;
-
 header_type ipv4_t {
     fields {
         version : 4;
@@ -82,6 +74,21 @@ calculated_field ipv4.hdrChecksum  {
     update ipv4_checksum;
 }
 
+header_type ipv6_t {
+    fields {
+        version : 4;
+        trafficClass : 8;
+        flowLabel : 20;
+        payloadLen : 16;
+        nextHdr : 8;
+        hopLimit : 8;
+        srcAddr : 128;
+        dstAddr : 128;
+    }
+}
+
+header ipv6_t ipv6;
+
 header_type udp_t {
     fields {
         srcPort : 16;
@@ -92,7 +99,6 @@ header_type udp_t {
 }
 
 header udp_t udp;
-
 
 field_list udp_checksum_list {
     ipv4.srcAddr;
