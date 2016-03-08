@@ -66,7 +66,7 @@ control ingress {
             else {
                 if (switch_metadata.role == IS_ACCEPTOR) {
                     apply(round_tbl);
-                    if (paxos_packet_metadata.round <= paxos.round) { /* if the round number is greater than one you've seen before */
+                    if (paxos_packet_metadata.round <= paxos.rnd) { /* if the round number is greater than one you've seen before */
                         apply(acceptor_tbl);
                      }
                      /* else apply(drop_tbl); /* deprecated prepare/promise */

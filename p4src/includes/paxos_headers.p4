@@ -13,12 +13,12 @@
 
 header_type paxos_t {
     fields {
-        instance : INSTANCE_SIZE; // instance number
-        round : ROUND_SIZE;       // round number
-        vround : ROUND_SIZE;      // round in which an acceptor casted a vote
-        acceptor: DATAPATH_SIZE;  // Switch ID
-        msgtype : MSGTYPE_SIZE;   // indicates the message type e.g., 1A, 1B, etc.
-        value : VALUE_SIZE;       // the value the acceptor voted for
+        inst     : INSTANCE_SIZE; // instance number
+        rnd      : ROUND_SIZE;       // round number
+        vrnd     : ROUND_SIZE;      // round in which an acceptor casted a vote
+        acptid   : DATAPATH_SIZE;  // Switch ID
+        msgtype  : MSGTYPE_SIZE;   // indicates the message type e.g., 1A, 1B, etc.
+        paxosval : VALUE_SIZE;       // the value the acceptor voted for
     }
 }
 

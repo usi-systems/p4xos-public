@@ -16,9 +16,9 @@ action _nop() {
 //  the current packet. Then it increased the num_inst by 1, and write
 //  it back to the register
 action increase_instance() {
-    register_read(paxos.instance, instance_register, 0);
-    add_to_field(paxos.instance, 1);
-    register_write(instance_register, 0, paxos.instance);
+    register_read(paxos.inst, instance_register, 0);
+    add_to_field(paxos.inst, 1);
+    register_write(instance_register, 0, paxos.inst);
 }
 
 table sequence_tbl {
