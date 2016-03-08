@@ -4,15 +4,20 @@ from scapy.all import *
 import sys
 import argparse
 
+class PaxosValue(Packet):
+    name ="PaxosValue "
+    fields_desc =[
+                    XBitField("value", 0x11223344, 256)
+                ]
+
 class Paxos(Packet):
     name ="PaxosPacket "
     fields_desc =[  
-                    XByteField("msgtype", 0x3),
-                    XShortField("instance", 0x1),
-                    XByteField("round", 0x1),
-                    XByteField("vround", 0x0),
-                    XLongField("acceptor", 0x0),
-                    XBitField("value", 0x11223344, 512) 
+                    XIntField("instance", 0x1),
+                    XShortField("round", 0x1),
+                    XShortField("vround", 0x0),
+                    XShortField("acceptor", 0x0),
+                    XShortField("msgtype", 0x3),
                 ]
 
 
@@ -20,7 +25,7 @@ def paxos_packet(typ, inst, rnd, vrnd, value):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="10.0.0.1", dst="10.0.0.2")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(msgtype=typ, instance=inst, round=rnd, vround=vrnd, value=value)
+    pkt = eth / ip / udp / Paxos(msgtype=typ, instance=inst, round=rnd, vround=vrnd) / fuzz(PaxosValue())
     return pkt
 
 

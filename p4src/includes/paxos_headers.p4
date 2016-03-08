@@ -4,10 +4,10 @@
 // Headers for Paxos
 
 #define INSTANCE_SIZE 32
-#define MSGTYPE_SIZE 16
 #define ROUND_SIZE 16
 #define DATAPATH_SIZE 32
-#define VALUE_SIZE 32
+#define MSGTYPE_SIZE 16
+#define VALUE_SIZE 256
 
 #define INSTANCE_COUNT 65536
 
