@@ -43,27 +43,32 @@ def client(args):
     now = datetime.datetime.now()
     start = newTime(now)
     pkt = paxos / start
-    print sys.getsizeof(pkt)
-    sendp(pkt, iface= args.interface, count=args.count, inter=args.inter)
+    if args.outfile:
+        wrpcap(args.outfile, pkt)
+    else:
+        sendp(pkt, iface= args.interface, count=args.count, inter=args.inter)
+
+PAXOS_SIZE = len(Paxos())
+VALSIZE = len(PaxosValue())
+TIMESIZE = len(Tutime())
 
 def handle(x):
-    if IP in x:
-        if UDP in x:
-            if Raw in x:
-                pax = Paxos(x['Raw'].load)
-                if (pax.msgtype < 0 or pax.msgtype > 4):
-                    return
-                paxval = PaxosValue(pax['Raw'].load)
-                start = Tutime(paxval['Raw'].load)
-                if start.hour > 24:
-                    return
-
-                end_time = datetime.datetime.now()
-                start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, 
-                    start.hour, start.minute, start.second, start.microsecond)
-                dur =  end_time - start_time
-                print dur.total_seconds()
-
+    if Raw not in x or len(x.load) != PAXOS_SIZE + VALSIZE + TIMESIZE:
+        return
+    pax = Paxos(x['Raw'].load)
+    if Raw not in pax or len(pax.load) != VALSIZE + TIMESIZE:
+        return
+    paxval = PaxosValue(pax['Raw'].load)
+    if Raw not in paxval or len(paxval.load) != TIMESIZE:
+        return
+    start = Tutime(paxval['Raw'].load)
+    if start.hour > 24:
+        return
+    end_time = datetime.datetime.now()
+    start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, 
+        start.hour, start.minute, start.second, start.microsecond)
+    dur =  end_time - start_time
+    print dur.total_seconds()
 
 
 def server(itf):
@@ -81,9 +86,16 @@ if __name__=='__main__':
     parser.add_argument("-s", "--server", help="run as server", action="store_true")
     parser.add_argument("-c", "--client", help="run as client", action="store_true")
     parser.add_argument("-i", "--interface", required=True, help="bind to specified interface")
+    parser.add_argument("-I", "--infile", help="input file")
+    parser.add_argument("-O", "--outfile", help="output file")
     args = parser.parse_args()
 
-    if args.client:
-        client(args)
+    if args.infile:
+        pkts = rdpcap(args.infile)
+        for p in pkts:
+            handle(p)
     else:
-        server(args.interface)
+        if args.client:
+            client(args)
+        else:
+            server(args.interface)
