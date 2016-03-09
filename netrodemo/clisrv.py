@@ -16,22 +16,26 @@ def newTime(ts):
     ts = Tutime(hour=ts.hour, minute=ts.minute, second=ts.second, microsecond=ts.microsecond)
     return ts
 
+class PaxosValue(Packet):
+    name ="PaxosValue "
+    fields_desc =[
+                    XBitField("value", 0x11223344, 256)
+                ]
 
 class Paxos(Packet):
     name ="PaxosPacket "
     fields_desc =[  XIntField("inst", 0x1),
                     XShortField("rnd", 0x1),
                     XShortField("vrnd", 0x0),
-                    XShortField("acpt", 0x0),
-                    XShortField("msgtype", 0x3),
-                    XIntField("val", 0x11223344) ]
+                    XIntField("acpt", 0x0),
+                    XShortField("msgtype", 0x3) ]
 
 
 def paxos_packet(typ, inst, rnd, vrnd, value):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="10.0.0.1", dst="10.0.0.2")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(msgtype=typ, inst=inst, rnd=rnd, vrnd=vrnd, val=value)
+    pkt = eth / ip / udp / Paxos(inst=inst, rnd=rnd, vrnd=vrnd, msgtype=typ) / fuzz(PaxosValue())
     return pkt
 
 def client(args):
@@ -39,20 +43,26 @@ def client(args):
     now = datetime.datetime.now()
     start = newTime(now)
     pkt = paxos / start
+    print sys.getsizeof(pkt)
     sendp(pkt, iface= args.interface, count=args.count, inter=args.inter)
 
 def handle(x):
-    if sys.getsizeof(x) != 64:
-        return
+    if IP in x:
+        if UDP in x:
+            if Raw in x:
+                pax = Paxos(x['Raw'].load)
+                if (pax.msgtype < 0 or pax.msgtype > 4):
+                    return
+                paxval = PaxosValue(pax['Raw'].load)
+                start = Tutime(paxval['Raw'].load)
+                if start.hour > 24:
+                    return
 
-    pax = Paxos(x['Raw'].load)
-    if (pax.msgtype < 0 or pax.msgtype > 4):
-        return
-    start = Tutime(pax['Raw'].load)
-    end_time = datetime.datetime.now()
-    start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, start.hour, start.minute, start.second, start.microsecond)
-    dur =  end_time - start_time
-    print dur.total_seconds()
+                end_time = datetime.datetime.now()
+                start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, 
+                    start.hour, start.minute, start.second, start.microsecond)
+                dur =  end_time - start_time
+                print dur.total_seconds()
 
 
 
