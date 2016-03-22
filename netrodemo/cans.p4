@@ -86,12 +86,13 @@ parser parse_udp {
 
 parser parse_paxos {
     extract(paxos);
-    return paxos_ctl;
+    return ingress;
 }
 
 primitive_action seq_func();
 primitive_action paxos_phase1a();
 primitive_action paxos_phase2a();
+primitive_action reset_registers();
 
 
 action forward(port) {
@@ -113,16 +114,22 @@ action _no_op() {
 
 action increase_seq() {
     seq_func();
+    modify_field(udp.checksum, 0);
 }
 
 action handle_phase1a() {
     paxos_phase1a();
+    modify_field(udp.checksum, 0);
 }
 
 action handle_phase2a() {
     paxos_phase2a();
+    modify_field(udp.checksum, 0);
 }
 
+action reset_paxos() {
+    reset_registers();
+}
 
 table paxos_tbl {
     reads {
@@ -132,6 +139,7 @@ table paxos_tbl {
         increase_seq;
         handle_phase1a;
         handle_phase2a;
+        reset_paxos;
         _no_op;
     }
     size : 8;
@@ -139,9 +147,7 @@ table paxos_tbl {
 
 control ingress {
     apply(mac_tbl);
-}
-
-control paxos_ctl {
-    apply(mac_tbl);
-    apply(paxos_tbl);
+    if (valid (paxos)) {
+        apply(paxos_tbl);
+    }
 }

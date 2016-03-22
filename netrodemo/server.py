@@ -19,7 +19,7 @@ def newTime(ts):
 class PaxosValue(Packet):
     name ="PaxosValue "
     fields_desc =[
-                    XBitField("value", 0x11223344, 256)
+                    XBitField("value", 0x11223344,256)
                 ]
 
 class Paxos(Packet):
@@ -27,32 +27,15 @@ class Paxos(Packet):
     fields_desc =[  XIntField("inst", 0x1),
                     XShortField("rnd", 0x1),
                     XShortField("vrnd", 0x0),
-                    XIntField("acpt", 0x0),
+                    XShortField("acpt", 0x0),
                     XShortField("msgtype", 0x3) ]
 
-
-def paxos_packet(typ, inst, rnd, vrnd, value):
-    eth = Ether(dst="08:00:27:10:a8:80")
-    ip = IP(src="10.0.0.1", dst="10.0.0.2")
-    udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(inst=inst, rnd=rnd, vrnd=vrnd, msgtype=typ) / fuzz(PaxosValue())
-    return pkt
-
-def client(args):
-    paxos  = paxos_packet(args.pxtype, args.inst, args.rnd, args.vrnd, args.value)
-    now = datetime.datetime.now()
-    start = newTime(now)
-    pkt = paxos / start
-    if args.outfile:
-        wrpcap(args.outfile, pkt)
-    else:
-        sendp(pkt, iface= args.interface, count=args.count, inter=args.inter)
 
 PAXOS_SIZE = len(Paxos())
 VALSIZE = len(PaxosValue())
 TIMESIZE = len(Tutime())
 
-def handle(x):
+def handle(x, itf):
     if Raw not in x or len(x.load) != PAXOS_SIZE + VALSIZE + TIMESIZE:
         return
     pax = Paxos(x['Raw'].load)
@@ -65,29 +48,19 @@ def handle(x):
     if start.hour > 24:
         return
     end_time = datetime.datetime.now()
-    start_time = datetime.datetime(end_time.year, end_time.month, end_time.day, 
+    start_time = datetime.datetime(end_time.year, end_time.month, end_time.day,
         start.hour, start.minute, start.second, start.microsecond)
     dur =  end_time - start_time
     print dur.total_seconds()
-
+    sendp(x, iface=itf)
 
 def server(itf):
-    sniff(iface = itf, prn = lambda x: handle(x))
+    sniff(iface = itf, prn = lambda x: handle(x, itf))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')
-    parser.add_argument('--inst', help='Paxos instance', type=int, default=0)
-    parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
-    parser.add_argument('-a', '--vrnd', help='Paxos value round', type=int, default=0)
-    parser.add_argument('-t', '--pxtype', help='Paxos msg type', type=int, default=0)
-    parser.add_argument('--count', help='Number of packets to send', type=int, default=1)
-    parser.add_argument('--inter', help='Interval between sending', type=float, default=1)
-    parser.add_argument('-v', '--value', help='Paxos value', type=int, default=0x11223344)
-    parser.add_argument("-s", "--server", help="run as server", action="store_true")
-    parser.add_argument("-c", "--client", help="run as client", action="store_true")
     parser.add_argument("-i", "--interface", required=True, help="bind to specified interface")
     parser.add_argument("-I", "--infile", help="input file")
-    parser.add_argument("-O", "--outfile", help="output file")
     args = parser.parse_args()
 
     if args.infile:
@@ -95,7 +68,4 @@ if __name__=='__main__':
         for p in pkts:
             handle(p)
     else:
-        if args.client:
-            client(args)
-        else:
-            server(args.interface)
+        server(args.interface)

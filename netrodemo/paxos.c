@@ -3,7 +3,7 @@
 #define MAX_INST 400000
 #define SWITCH_ID 0x0001
 __declspec(mem export) uint32_t cur_instance;
-__declspec(mem export) uint16_t pkt_inst;
+__declspec(mem export) uint32_t pkt_inst;
 __declspec(mem export) uint16_t rnds[MAX_INST];
 __declspec(mem export) uint16_t vrnds[MAX_INST];
 __declspec(mem export) uint32_t values[MAX_INST];
@@ -15,6 +15,19 @@ enum Paxos {
     Phase2A,
     Phase2B
 };
+
+int pif_plugin_reset_registers(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
+{
+    int i;
+    cur_instance = 0;
+    for (i = 0; i < MAX_INST; i++) {
+        rnds[i] = 0;
+        vrnds[i] = 0;
+        values[i] = 0;
+    }
+    return PIF_PLUGIN_RETURN_FORWARD;
+}
+
 
 int pif_plugin_seq_func(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
 {
