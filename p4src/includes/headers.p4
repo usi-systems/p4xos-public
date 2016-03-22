@@ -112,17 +112,5 @@ field_list udp_checksum_list {
     payload;
 }
 
-field_list_calculation udp_checksum {
-    input {
-        udp_checksum_list;
-    }
-    algorithm : csum16;
-    output_width : 16;
-}
-
-calculated_field udp.checksum {
-    verify udp_checksum if (valid(udp));
-    update udp_checksum if (valid(udp));
-}
 
 #endif

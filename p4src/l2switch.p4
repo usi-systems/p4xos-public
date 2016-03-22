@@ -1,24 +1,34 @@
-#include "includes/headers.p4"
-#include "includes/parser.p4"
 
 
 
-action _drop() {
-    drop();
+header_type ethernet_t {
+    fields {
+        dstAddr : 48;
+        srcAddr : 48;
+        etherType : 16;
+    }
 }
+
+header ethernet_t ethernet;
+
+parser start {
+    return parse_ethernet;
+}
+
+parser parse_ethernet {
+    extract(ethernet);
+    return ingress;
+}
+
 
 action forward(port) {
     modify_field(standard_metadata.egress_spec, port);
 }
 
-table drop_tbl {
-    actions { _drop; }
-    size : 1;
-}
 
-table dmac_tbl {
+table fwd_tbl {
     reads {
-        ethernet.dstAddr : exact;
+        standard_metadata.ingress_port : exact;
     }
     actions {
         forward;
@@ -27,9 +37,5 @@ table dmac_tbl {
 }
 
 control ingress {
-    if (valid(ipv6)) {
-        apply(drop_tbl);
-    } else {
-        apply(dmac_tbl);
-    }
+    apply(fwd_tbl);
 }
