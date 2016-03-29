@@ -1,0 +1,18 @@
+##############################################
+OPTIMIZATIONS APPLIED ON HAN'S PAXOS PIPELINE
+Author: Pietro Bressana
+##############################################
+
+- Removed "ModifyFieldegress_spec";
+- Replaced "DstMac Table" with "Input Pipeline", which performs parsing and matching in two different modules ("PARSE" and "MATCH+CHOOSE");
+- Removed "Role Table", since its functionality has been included into "MATCH+CHOOSE" module;
+- Pipeline split into two parts: "ACCEPTOR PIPELINE" and "COORDINATOR PIPELINE"
+- Added "FORWARDING PATH" to allow non-paxos packets to be forwarded to the output;
+- Removed "ReadRound"
+- Replaced "Sequence Table" with "SEQUENCE" and connected to the output;
+- Replaced "Round Table" with "ROUND"
+- Removed "Drop Table", since its functionality has been included into "ROUND"
+- Removed "ReadRound"
+- Removed "handle1a"
+- Removed "handle2a"
+- Replaced "Acceptor Table" with "ACCEPTOR"
