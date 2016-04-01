@@ -16,7 +16,7 @@ header_type ingress_metadata_t {
 metadata ingress_metadata_t paxos_packet_metadata;
 
 register datapath_id {
-    width: 64;
+    width: DATAPATH_SIZE;
     static : acceptor_tbl;
     instance_count : 1; 
 }
