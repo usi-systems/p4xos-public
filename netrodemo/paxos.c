@@ -1,13 +1,14 @@
 #include <pif_plugin.h>
 #include <nfp.h>
 
-#define MAX_INST 400000
+#define MAX_INST 14000000
 #define SWITCH_ID 0x0001
-__declspec(mem export) uint32_t cur_instance;
-__declspec(mem export) uint32_t pkt_inst;
-__declspec(mem export) uint16_t rnds[MAX_INST];
-__declspec(mem export) uint16_t vrnds[MAX_INST];
-__declspec(mem export) uint32_t values[MAX_INST];
+
+__declspec(local_mem shared) uint32_t pkt_inst;
+__declspec(local_mem scope(global)) uint32_t cur_instance;
+__declspec(emem export scope(global)) uint16_t rnds[MAX_INST];
+__declspec(emem export scope(global)) uint16_t vrnds[MAX_INST];
+__declspec(emem export scope(global)) uint32_t values[MAX_INST];
 
 __gpr uint32_t timestamp_high, timestamp_low;
 
