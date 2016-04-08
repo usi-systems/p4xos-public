@@ -85,6 +85,7 @@ output													S_AXI_AWREADY
 wire		[0:0]										wire_packet_in_packet_in_TVALID ;
 wire 		[0:0]										wire_packet_in_packet_in_TREADY ;
 wire		[255:0]										wire_packet_in_packet_in_TDATA ;
+wire		[127:0]										wire_packet_in_packet_in_TUSER ;
 wire		[31:0]										wire_packet_in_packet_in_TKEEP ;
 wire		[0:0]										wire_packet_in_packet_in_TLAST ;
 
@@ -111,8 +112,17 @@ wire 		[0:0] 										wire_control_S_AXI_RREADY ;
 wire 		[0:0] 										wire_packet_out_packet_out_TVALID ;
 wire 		[0:0] 										wire_packet_out_packet_out_TREADY ;
 wire 		[255:0]										wire_packet_out_packet_out_TDATA ;
+wire 		[127:0]										wire_packet_out_packet_out_TUSER ;
 wire 		[31:0]										wire_packet_out_packet_out_TKEEP ;
 wire 		[0:0] 										wire_packet_out_packet_out_TLAST ;
+
+// TUPLE INPUT INTERFACE
+wire 		[0:0] 										wire_tin_valid ;
+wire 		[127:0]										wire_tin_data ;
+
+// TUPLE OUTPUT INTERFACE
+wire 		[0:0] 										wire_tout_valid ;
+wire 		[127:0]										wire_tout_data ;
 
 // LINE CLK & RST SIGNALS
 reg 													reg_clk_line_rst ; // INV
@@ -126,6 +136,10 @@ wire 													wire_clk_packet ;
 reg 													reg_clk_control_rst ; // INV
 wire 													wire_clk_control ;
 
+// TUPLE CLK & RST SIGNALS
+reg                                                     reg_tuple_rst ;
+wire                                                    wire_clk_tuple ;
+
 //#################################
 //####       CONNECTIONS
 //#################################
@@ -134,8 +148,10 @@ wire 													wire_clk_control ;
 assign 		wire_packet_in_packet_in_TVALID = s_axis_tvalid ;
 assign 		wire_packet_in_packet_in_TREADY = s_axis_tready;
 assign 		wire_packet_in_packet_in_TDATA = s_axis_tdata;
+assign 		wire_packet_in_packet_in_TUSER = s_axis_tuser;
 assign 		wire_packet_in_packet_in_TKEEP = s_axis_tkeep;
 assign 		wire_packet_in_packet_in_TLAST = s_axis_tlast;
+
 
 // AXI-LITE CONTROL INTERFACE
 assign		wire_control_S_AXI_AWADDR = S_AXI_AWADDR; // [REG]<--INPUT
@@ -163,14 +179,17 @@ assign  	m_axis_tdata	=	wire_packet_out_packet_out_TDATA ;
 assign  	m_axis_tkeep	=	wire_packet_out_packet_out_TKEEP ;
 assign  	m_axis_tlast	=	wire_packet_out_packet_out_TLAST ;
 
-// LINE CLK & RST SIGNALS
+// LINE RST SIGNAL
 assign 		wire_clk_line = axis_aclk ;
 
-// PACKET CLK & RST SIGNALS
+// PACKET RST SIGNAL
 assign 		wire_clk_packet = axis_aclk ;
 
-// CONTROL CLK & RST SIGNALS
+// CONTROL RST SIGNAL
 assign  	wire_clk_control = S_AXI_ACLK ;
+
+// TUPLE CLK SIGNAL
+assign 		wire_clk_tuple = axis_aclk ;
 
 //###################################
 //####    AXI_CONTROL INSTANCE
@@ -182,13 +201,48 @@ assign  	wire_clk_control = S_AXI_ACLK ;
 // INSTEAD OF DISCARDING EXCEEDING bits
 
 //###################################
-//####    TUSER_FSM INSTANCE
+//####    TUSER_IN_FSM INSTANCE
 //###################################
 
-// TODO:
-// HW MODULE THAT MAPS SUME TUSER SIGNAL
-// TO P4_PROCESSOR TUPLE PORT
-// INSTEAD OF SENDING IT TO THE OUTOUT PORT
+tuser_in_fsm tuser_in_fsm_inst (
+
+// CLK & RST
+.tin_aclk												(wire_clk_tuple),
+.tin_arst												(reg_tuple_rst),
+
+// AXIS INPUT
+.tin_avalid												(wire_packet_in_packet_in_TVALID),
+.tin_adata												(wire_packet_in_packet_in_TDATA),
+.tin_atuser												(wire_packet_in_packet_in_TUSER),
+
+// TUPLE OUTPUT
+.tin_valid												(wire_tin_valid),
+.tin_data												(wire_tin_data)
+
+); // tuser_in_fsm_inst
+
+//###################################
+//####    TUSER_OUT_FSM INSTANCE
+//###################################
+
+tuser_out_fsm tuser_out_fsm_inst (
+
+// CLK & RST
+.tout_aclk												(wire_clk_tuple),
+.tout_arst												(reg_tuple_rst),
+
+// AXIS INPUT
+.tout_avalid											(wire_packet_out_packet_out_TVALID),
+.tout_adata												(wire_packet_out_packet_out_TDATA),
+
+// TUPLE INPUT
+.tout_valid												(wire_tout_valid),
+.tout_data												(wire_tout_data),
+
+// TUSER OUTPUT
+.tout_atuser											(wire_packet_out_packet_out_TUSER)
+
+); // tuser_out_fsm_inst
 
 //###################################
 //####    P4_PROCESSOR INSTANCE
@@ -204,8 +258,8 @@ p4_processor p4_processor_inst (
 .packet_in_packet_in_TLAST								(wire_packet_in_packet_in_TLAST),
 
 // TUPLE INPUT INTERFACE
-.tuple_in_tuple_in_VALID								(1'b0), // CONSTANT
-.tuple_in_tuple_in_DATA									(128'b0), // CONSTANT
+.tuple_in_tuple_in_VALID								(wire_tin_valid), // TIN FSM
+.tuple_in_tuple_in_DATA									(wire_tin_data), // TIN FSM
 
 // AXI-LITE CONTROL INTERFACE
 .control_S_AXI_AWADDR									(wire_control_S_AXI_AWADDR [8:0]  ), // MISMATCH [11 : 9]
@@ -237,8 +291,8 @@ p4_processor p4_processor_inst (
 .packet_out_packet_out_TLAST							(wire_packet_out_packet_out_TLAST   ),
 
 // TUPLE OUTPUT INTERFACE
-.tuple_out_tuple_out_VALID								(/*VOID*/), // N.C.
-.tuple_out_tuple_out_DATA								(/*VOID*/), // N.C.
+.tuple_out_tuple_out_VALID								(wire_tout_valid), // TOUT FSM
+.tuple_out_tuple_out_DATA								(wire_tout_data), // TOUT FSM
 
 // LINE CLK & RST SIGNALS
 .clk_line_rst											(reg_clk_line_rst ), // INV
@@ -265,13 +319,14 @@ always @ ( posedge axis_aclk /*or posedge S_AXI_ACLK*/ )
 
 begin
 
-// TUSER
-m_axis_tuser <= s_axis_tuser;
-
 // INVERT RESET REGISTERS
 reg_clk_line_rst <= ~(axis_resetn) ; // INV
 reg_clk_packet_rst <= ~(axis_resetn) ; // INV
 reg_clk_control_rst <= ~(S_AXI_ARESETN) ; // INV
+reg_tuple_rst <= ~(axis_resetn) ; // INV
+
+// TUSER OUTPUT REGISTER
+m_axis_tuser <=	wire_packet_out_packet_out_TUSER ;
 
 end // always
 
