@@ -21,13 +21,14 @@ tout_arst,
 
 // AXIS INPUT
 tout_avalid,
-tout_adata,
+tout_tlast,
+//tout_adata,
 
 // TUPLE INPUT
 tout_valid,
 tout_data,
 
-// TUSER OUTPUT
+// AXIS OUTPUT
 tout_atuser
 
 );// synthesis black_box
@@ -43,13 +44,14 @@ input 		[0:0]										tout_arst ;
 
 // AXIS INPUT
 input 		[0:0]										tout_avalid ;
-input 		[255:0]										tout_adata ;
+input 		[0:0]										tout_tlast ;
+//input 		[255:0]										tout_adata ;
 
 // TUPLE INPUT
 input 		[0:0]										tout_valid ;
 input 		[127:0]										tout_data ;
 
-// TUSER OUTPUT
+// AXIS OUTPUT
 output 		[127:0]										tout_atuser ;
 
 //#################################

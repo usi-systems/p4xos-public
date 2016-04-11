@@ -21,8 +21,9 @@ tin_arst,
 
 // AXIS INPUT
 tin_avalid,
-tin_adata,
+//tin_adata,
 tin_atuser,
+tin_atlast,
 
 // TUPLE OUTPUT
 tin_valid,
@@ -41,8 +42,9 @@ input 		[0:0]										tin_arst ;
 
 // AXIS INPUT
 input 		[0:0]										tin_avalid ;
-input 		[255:0]										tin_adata ;
+//input 		[255:0]										tin_adata ;
 input 		[127:0]										tin_atuser ;
+input 		[0:0]										tin_atlast ;
 
 // TUPLE OUTPUT
 output 		[0:0]										tin_valid ;

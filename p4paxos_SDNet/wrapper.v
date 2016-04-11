@@ -212,8 +212,9 @@ tuser_in_fsm tuser_in_fsm_inst (
 
 // AXIS INPUT
 .tin_avalid												(wire_packet_in_packet_in_TVALID),
-.tin_adata												(wire_packet_in_packet_in_TDATA),
+//.tin_adata												(wire_packet_in_packet_in_TDATA),
 .tin_atuser												(wire_packet_in_packet_in_TUSER),
+.tin_atlast												(wire_packet_in_packet_in_TLAST),
 
 // TUPLE OUTPUT
 .tin_valid												(wire_tin_valid),
@@ -233,11 +234,13 @@ tuser_out_fsm tuser_out_fsm_inst (
 
 // AXIS INPUT
 .tout_avalid											(wire_packet_out_packet_out_TVALID),
-.tout_adata												(wire_packet_out_packet_out_TDATA),
+.tout_tlast												(wire_packet_out_packet_out_TLAST),
+//.tout_adata												(wire_packet_out_packet_out_TDATA),
 
 // TUPLE INPUT
 .tout_valid												(wire_tout_valid),
 .tout_data												(wire_tout_data),
+
 
 // TUSER OUTPUT
 .tout_atuser											(wire_packet_out_packet_out_TUSER)
