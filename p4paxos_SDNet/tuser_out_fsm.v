@@ -31,7 +31,7 @@ tout_data,
 // AXIS OUTPUT
 tout_atuser
 
-);// synthesis black_box
+);
 
 //######################################
 //####       TYPE OF INTERFACES
@@ -52,14 +52,87 @@ input 		[0:0]										tout_valid ;
 input 		[127:0]										tout_data ;
 
 // AXIS OUTPUT
-output 		[127:0]										tout_atuser ;
+output reg  [127:0]										tout_atuser ;
 
 //#################################
 //####     WIRES & REGISTERS
 //#################################
 
+// FSM STATES
+reg 		[0:0]										state ;
+
 //#################################
 //####   FINITE STATE MACHINE
 //#################################
 
+always @ ( posedge tout_aclk )
+
+ if (tout_arst == 1'b1)
+ 
+     // RESET
+     begin
+    
+       tout_atuser <= 128'b0;
+       
+       state <= 0; // IDLE
+    
+     end
+
+ else begin // begin #2
+
+   case(state)
+
+        // STATE S0: IDLE
+    	0 : begin
+
+    			if( tout_avalid == 1'b1 && tout_valid == 1'b1 )
+
+    			begin // IDLE ==> READY
+
+                    tout_atuser <= tout_data;
+   
+    				state <= 1; // READY
+
+    			end
+
+    			else
+
+    			begin // IDLE ==> IDLE
+
+                    tout_atuser <= 128'b0;
+   
+    				state <= 0; // IDLE
+
+    			end
+
+           end
+
+        // STATE S1: READY
+    	1 : begin
+
+    			if( tout_avalid == 1'b0 || tout_valid == 1'b0 )
+
+    			begin // READY ==> IDLE
+
+                    tout_atuser <= 128'b0;
+   
+    				state <= 0; // IDLE
+
+    			end
+
+    			else
+
+    			begin // READY ==> READY
+                    
+                    tout_atuser <= tout_data;
+   
+    				state <= 1; // READY
+
+    			end
+
+           end
+
+   endcase
+
+ end // begin #2
 endmodule // tuser_out_fsm
