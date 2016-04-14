@@ -1,2 +1,9 @@
-priority=10,in_port=1,udp,nw_dst=224.3.29.71,actions=output:2
-priority=10,in_port=2,udp,nw_dst=224.3.29.71,actions=output:3
+ovs-ofctl add-group br0 group_id=1,type=fast_failover,bucket=watch_port:2,output:2,bucket=watch_port:3,output:3
+ovs-ofctl add-group br0 group_id=2,type=all,bucket=output:4,bucket=output:5,bucket=output:6
+ovs-ofctl add-group br0 group_id=3,type=all,bucket=output:7,bucket=output:8
+ovs-ofctl add-flow br0 priority=10,in_port=1,udp,nw_dst=224.3.29.71,actions=group:1
+ovs-ofctl add-flow br0 priority=10,in_port=2,udp,nw_dst=224.3.29.71,actions=group:2
+ovs-ofctl add-flow br0 priority=10,in_port=3,udp,nw_dst=224.3.29.71,actions=group:2
+ovs-ofctl add-flow br0 priority=10,in_port=4,udp,nw_dst=224.3.29.71,actions=group:3
+ovs-ofctl add-flow br0 priority=10,in_port=5,udp,nw_dst=224.3.29.71,actions=group:3
+ovs-ofctl add-flow br0 priority=10,in_port=6,udp,nw_dst=224.3.29.71,actions=group:3
