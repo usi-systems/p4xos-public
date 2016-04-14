@@ -1,0 +1,2 @@
+priority=10,in_port=1,udp,nw_dst=224.3.29.71,actions=output:2
+priority=10,in_port=2,udp,nw_dst=224.3.29.71,actions=output:3

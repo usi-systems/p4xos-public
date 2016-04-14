@@ -1,0 +1,25 @@
+curl -X POST -d '{
+    "dpid": 7461554548848405464,
+    "type": "FF",
+    "group_id": 1,
+    "buckets": [
+        {
+            "watch_port": 2,
+            "actions": [
+                {
+                    "type": "OUTPUT",
+                    "port": 2
+                }
+            ]
+        },
+        {
+            "watch_port": 3,
+            "actions": [
+                {
+                    "type": "OUTPUT",
+                    "port": 3
+                }
+            ]
+        }
+    ]
+ }' http://localhost:8080/stats/groupentry/add
