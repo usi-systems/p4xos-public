@@ -23,7 +23,7 @@ function p_paxos.dissector (buf, pkt, root)
 	subtree:add(f_vround, buf(6,2)):append_text(" [VRound]")
 	subtree:add(f_datapath, buf(8,2)):append_text(" [Datapath]")
 	subtree:add(f_msgtype, buf(10,2)):append_text(" [MsgType]")
-	subtree:add(f_value, buf(12,48)):append_text(" [Value]")
+	subtree:add(f_value, buf(12,32)):append_text(" [Value]")
 
 	-- description of payload
 	subtree:append_text("")
