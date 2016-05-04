@@ -25,7 +25,7 @@ def paxos_packet(inst, rnd, vrnd, acpt, typ, value):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="192.168.4.95", dst="224.3.29.73")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(msgtype=typ, inst=inst, rnd=rnd, vrnd=vrnd) / fuzz(PaxosValue())
+    pkt = eth / ip / udp / Paxos(inst=inst, rnd=rnd, vrnd=vrnd, acpt=acpt, msgtype=typ) / fuzz(PaxosValue())
     return pkt
 
 
@@ -34,15 +34,15 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')
     parser.add_argument('interface', help='Network interface')
     parser.add_argument('-i', '--inst', help='Paxos instance', type=int, default=0)
-    parser.add_argument('-t', '--type', help='Paxos instance', type=int, default=3)
+    parser.add_argument('-t', '--type', help='Paxos type', type=int, default=3)
     parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
     parser.add_argument('-v', '--vrnd', help='Paxos value round', type=int, default=0)
     parser.add_argument('-a', '--acpt', help='Paxos acceptor id', type=int, default=0)
-    parser.add_argument('-V', '--value', help='Paxos value', type=int, default=0x1122)
+    parser.add_argument('-c', '--count', help='send multiple packets', type=int, default=1)
     parser.add_argument('-o', '--output', help='output pcap file', type=str)
     args = parser.parse_args()
 
     pkt = paxos_packet(args.inst, args.rnd, args.vrnd, args.acpt, args.type, args.value)
     pkt.show()
-    sendp(pkt, iface=args.interface)
+    sendp(pkt, iface=args.interface, count=args.count)
     # wrpcap("%s" % args.output, pkt)

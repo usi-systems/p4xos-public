@@ -20,12 +20,13 @@ def handle(x):
 
     pax.show()
 
-def server(itf):
-    sniff(iface = itf, prn = lambda x: handle(x))
+def server(args):
+    sniff(iface = args.interface, filter= 'dst %s and udp' % args.address, prn = lambda x: handle(x))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')
     parser.add_argument("interface", help="bind to specified interface")
+    parser.add_argument("--address", default="224.3.29.73", help="destination IP address")
     args = parser.parse_args()
 
-    server(args.interface)
+    server(args)
