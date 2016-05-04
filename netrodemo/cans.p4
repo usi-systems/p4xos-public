@@ -78,7 +78,18 @@ header_type paxos_t {
         vrnd    : 16;
         acpt    : 16;
         msgtype : 16;
-        val     : 32;
+        val0    : 32;
+        val1    : 32;
+        val2    : 32;
+        val3    : 32;
+        val4    : 32;
+        val5    : 32;
+        val6    : 32;
+        val7    : 32;
+        add1    : 32;
+        add2    : 32;
+        add3    : 32;
+        add4    : 32;
         fsh     : 32;  // Forwarding start (h: high bits, l: low bits)
         fsl     : 32;
         feh     : 32;  // Forwarding end

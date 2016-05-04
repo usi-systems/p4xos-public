@@ -1,14 +1,21 @@
 #include <pif_plugin.h>
 #include <nfp.h>
 
-#define MAX_INST 14000000
+#define MAX_INST 2000000
 #define SWITCH_ID 0x0001
 
 __declspec(local_mem shared) uint32_t pkt_inst;
 __declspec(local_mem scope(global)) uint32_t cur_instance;
 __declspec(emem export scope(global)) uint16_t rnds[MAX_INST];
 __declspec(emem export scope(global)) uint16_t vrnds[MAX_INST];
-__declspec(emem export scope(global)) uint32_t values[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value0s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value1s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value2s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value3s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value4s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value5s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value6s[MAX_INST];
+__declspec(emem export scope(global)) uint32_t value7s[MAX_INST];
 
 __gpr uint32_t timestamp_high, timestamp_low;
 
@@ -130,7 +137,14 @@ int pif_plugin_reset_registers(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     for (i = 0; i < MAX_INST; i++) {
         rnds[i] = 0;
         vrnds[i] = 0;
-        values[i] = 0;
+        value0s[i] = 0;
+        value1s[i] = 0;
+        value2s[i] = 0;
+        value3s[i] = 0;
+        value4s[i] = 0;
+        value5s[i] = 0;
+        value6s[i] = 0;
+        value7s[i] = 0;
     }
     return PIF_PLUGIN_RETURN_FORWARD;
 }
@@ -171,7 +185,14 @@ int pif_plugin_paxos_phase1a(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     paxos->vrnd = vrnds[pkt_inst];
     paxos->acpt = SWITCH_ID;
     paxos->msgtype = Phase1B;
-    paxos->val = values[pkt_inst];
+    paxos->val0 = value0s[pkt_inst];
+    paxos->val1 = value1s[pkt_inst];
+    paxos->val2 = value2s[pkt_inst];
+    paxos->val3 = value3s[pkt_inst];
+    paxos->val4 = value4s[pkt_inst];
+    paxos->val5 = value5s[pkt_inst];
+    paxos->val6 = value6s[pkt_inst];
+    paxos->val7 = value7s[pkt_inst];
 
     return PIF_PLUGIN_RETURN_FORWARD;
 }
@@ -194,9 +215,16 @@ int pif_plugin_paxos_phase2a(EXTRACTED_HEADERS_T *headers, MATCH_DATA_T *data)
     }
     rnds[pkt_inst]  = paxos->rnd;
     vrnds[pkt_inst] = paxos->rnd;
-    values[pkt_inst] = paxos->val;
     paxos->acpt = SWITCH_ID;
     paxos->msgtype = Phase2B;
+    value0s[pkt_inst] = paxos->val0;
+    value1s[pkt_inst] = paxos->val1;
+    value2s[pkt_inst] = paxos->val2;
+    value3s[pkt_inst] = paxos->val3;
+    value4s[pkt_inst] = paxos->val4;
+    value5s[pkt_inst] = paxos->val5;
+    value6s[pkt_inst] = paxos->val6;
+    value7s[pkt_inst] = paxos->val7;
 
     return PIF_PLUGIN_RETURN_FORWARD;
 }
