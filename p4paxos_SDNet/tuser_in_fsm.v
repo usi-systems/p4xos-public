@@ -36,7 +36,10 @@ tin_btlast,
 
 // TUPLE OUTPUT INTERFACE
 tin_valid,
-tin_data
+tin_data,
+
+// DEBUG PORTS
+dbg_state
 
 );
 
@@ -50,22 +53,25 @@ input     [0:0]                   tin_arst ;
 
 // AXIS INPUT INTERFACE
 input     [0:0]                   tin_avalid ;
-output    [0:0]                   tin_aready ;
+output  reg    [0:0]                   tin_aready ;
 input     [255:0]                 tin_adata ;
 input     [31:0]                  tin_akeep ;
 input     [0:0]                   tin_atlast ;
 input     [127:0]                 tin_atuser ;
 
 // AXIS OUTPUT INTERFACE
-output    [0:0]                   tin_bvalid ;
+output  reg    [0:0]                   tin_bvalid ;
 input     [0:0]                   tin_bready ;
-output    [255:0]                 tin_bdata ;
-output    [31:0]                  tin_bkeep ;
-output    [0:0]                   tin_btlast ;
+output  reg    [255:0]                 tin_bdata ;
+output  reg    [31:0]                  tin_bkeep ;
+output  reg    [0:0]                   tin_btlast ;
 
 // TUPLE OUTPUT INTERFACE
 output reg  [0:0]                 tin_valid ;
 output reg  [127:0]               tin_data ;
+
+// DEBUG PORTS
+output      [0:2]                   dbg_state;
 
 //#################################
 //####     WIRES & REGISTERS
@@ -76,6 +82,11 @@ reg     [0:2]                   state ;
 // 000: IDLE
 // 001: WRD1
 // 010: WRDN
+
+// CONNECTIONS
+
+// DEBUG
+assign    dbg_state = state ;
 
 //#################################
 //####   FINITE STATE MACHINE
@@ -90,12 +101,12 @@ always @ ( posedge tin_aclk )
      ////////////////////////// 
      begin
 
-       tin_aready <== 0;
+       tin_aready <= 0;
 
-       tin_bvalid <== 0;
-       tin_bdata <== 0;
-       tin_bkeep <== 0;
-       tin_btlast <== 0;
+       tin_bvalid <= 0;
+       tin_bdata <= 0;
+       tin_bkeep <= 0;
+       tin_btlast <= 0;
     
        tin_valid <= 0;
        tin_data <= 0;
@@ -117,14 +128,14 @@ always @ ( posedge tin_aclk )
 
           begin // IDLE ==> WRD1
 
-           tin_aready <== 1;
+           tin_aready <= 1;
 
-           tin_bvalid <== 1;
-           tin_bdata <== tin_adata;
-           tin_bkeep <== tin_akeep;
-           tin_btlast <== tin_atlast;
+           tin_bvalid <= 1;
+           tin_bdata <= tin_adata;
+           tin_bkeep <= tin_akeep;
+           tin_btlast <= 0;
         
-           tin_valid <= 0;
+           tin_valid <= 1;
            tin_data <= tin_atuser;
    
             state <= 3'b001; // WRD1
@@ -135,12 +146,12 @@ always @ ( posedge tin_aclk )
 
           begin // IDLE ==> IDLE
 
-           tin_aready <== 0;
+           tin_aready <= 0;
 
-           tin_bvalid <== 0;
-           tin_bdata <== 0;
-           tin_bkeep <== 0;
-           tin_btlast <== 0;
+           tin_bvalid <= 0;
+           tin_bdata <= 0;
+           tin_bkeep <= 0;
+           tin_btlast <= 0;
         
            tin_valid <= 0;
            tin_data <= 0;
@@ -156,14 +167,14 @@ always @ ( posedge tin_aclk )
     //////////////////////////
       3'b001 : begin
 
-            tin_aready <== 1;
+            tin_aready <= 1;
 
-            tin_bvalid <== 1;
-            tin_bdata <== tin_adata;
-            tin_bkeep <== tin_akeep;
-            tin_btlast <== tin_atlast;
+            tin_bvalid <= 1;
+            tin_bdata <= tin_adata;
+            tin_bkeep <= tin_akeep;
+            tin_btlast <= 0;
             
-            tin_valid <= 1;
+            tin_valid <= 0;
             tin_data <= tin_atuser;
    
             state <= 3'b010; // WRDN
@@ -179,12 +190,12 @@ always @ ( posedge tin_aclk )
 
            begin // WRDN ==> IDLE
 
-           tin_aready <== 0;
+           tin_aready <= 0;
 
-           tin_bvalid <== 0;
-           tin_bdata <== 0;
-           tin_bkeep <== 0;
-           tin_btlast <== 0;
+           tin_bvalid <= 0;
+           tin_bdata <= 0;
+           tin_bkeep <= 0;
+           tin_btlast <= 1;
         
            tin_valid <= 0;
            tin_data <= 0;
@@ -197,12 +208,12 @@ always @ ( posedge tin_aclk )
 
            begin // WRDN ==> WRDN
                      
-            tin_aready <== 1;
+            tin_aready <= 1;
 
-            tin_bvalid <== 1;
-            tin_bdata <== tin_adata;
-            tin_bkeep <== tin_akeep;
-            tin_btlast <== tin_atlast;
+            tin_bvalid <= 1;
+            tin_bdata <= tin_adata;
+            tin_bkeep <= tin_akeep;
+            tin_btlast <= 0;
             
             tin_valid <= 0;
             tin_data <= tin_atuser;
