@@ -78,10 +78,9 @@ output      [0:2]                   dbg_state;
 //#################################
 
 // FSM STATES
-reg     [0:2]                   state ;
+reg     [0:2]                   state = 3'bxxx ;
 // 000: IDLE
-// 001: WRD1
-// 010: WRDN
+// 001: WRDN
 
 // CONNECTIONS
 
@@ -111,7 +110,7 @@ always @ ( posedge tin_aclk )
        tin_valid <= 0;
        tin_data <= 0;
        
-       state <= 0; // IDLE
+       state <= 3'b000; // IDLE
     
      end
 
@@ -163,42 +162,24 @@ always @ ( posedge tin_aclk )
            end
 
     ////////////////////////// 
-    //    STATE S001: WRD1
-    //////////////////////////
-      3'b001 : begin
-
-            tin_aready <= 1;
-
-            tin_bvalid <= 1;
-            tin_bdata <= tin_adata;
-            tin_bkeep <= tin_akeep;
-            tin_btlast <= 0;
-            
-            tin_valid <= 0;
-            tin_data <= tin_atuser;
-   
-            state <= 3'b010; // WRDN
-
-           end
-
+    //    STATE S001: WRDN
     ////////////////////////// 
-    //    STATE S010: WRDN
-    ////////////////////////// 
-       3'b010 : begin
+      // 3'b001 : begin
+       3'b001 : begin
 
            if( tin_atlast == 1)
 
            begin // WRDN ==> IDLE
 
-           tin_aready <= 0;
+           tin_aready <= 1;
 
-           tin_bvalid <= 0;
-           tin_bdata <= 0;
-           tin_bkeep <= 0;
+           tin_bvalid <= 1;
+           tin_bdata <= tin_adata;
+           tin_bkeep <= tin_akeep;
            tin_btlast <= 1;
         
            tin_valid <= 0;
-           tin_data <= 0;
+           tin_data <= tin_atuser;
        
           state <= 3'b000; // IDLE
 
@@ -218,11 +199,12 @@ always @ ( posedge tin_aclk )
             tin_valid <= 0;
             tin_data <= tin_atuser;
        
-             state <= 3'b010; // IDLE
+             state <= 3'b001; // WRDN
 
            end
 
             end
+
 
    endcase
 

@@ -36,6 +36,9 @@ module tuser_in_tb();
 
     // DEBUG PORTS
     wire  [0:2]                 dbg_state;
+    
+    // ITERATION VARIABLE
+    reg                         i = 0;
    
 // ############################################################################
 
@@ -73,7 +76,7 @@ tuser_in_fsm  tuser_in_fsm_inst// UUT
 
 // ############################################################################ 
     
-always#1  clk=~clk; // CLOCK SIGNAL
+always #1 clk=~clk; // CLOCK SIGNAL
       
       initial begin
           
@@ -93,15 +96,17 @@ always#1  clk=~clk; // CLOCK SIGNAL
        
           rst <= 1;
 
-          #10
+          #4
 
           rst <= 0;
+ 
+          while (i <= 10) begin                    
                    
           //////////////////////////////
           // PACKET          
           //////////////////////////////
           
-          #2
+          #4
 
           tin_avalid <= 0;
           tin_adata <= 22222;//256
@@ -130,7 +135,7 @@ always#1  clk=~clk; // CLOCK SIGNAL
           tin_atuser <= 44444;//128
           tin_bready <= 1;
 
-          #2
+          #3
 
           tin_avalid <= 1;
           tin_adata <= 22222;//256
@@ -152,62 +157,8 @@ always#1  clk=~clk; // CLOCK SIGNAL
           tin_atuser <= 0;//128
           tin_bready <= 0;
           
-          //////////////////////////////
-          // PACKET          
-          //////////////////////////////
-          
-          #8
-
-          tin_avalid <= 0;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
-
-          #2
-          
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
-
-          while (tin_aready != 1) begin
-          #2;// wait
-          end 
-
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
-
-          #2
-
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 1;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
-          
-          #2
-          
-          //////////////////////////////
-          // EMPTY PACKET          
-          //////////////////////////////
-                    
-          tin_avalid <= 0;
-          tin_adata <= 0;//256
-          tin_akeep <= 0;//32
-          tin_atlast <= 0;
-          tin_atuser <= 0;//128
-          tin_bready <= 0;
-
-            
+          end // while
+             
       end // INITIAL
   
 endmodule

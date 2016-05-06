@@ -139,4 +139,10 @@ input 													clk_control ;
 // RST DONE SIGNAL
 output 		[0:0]										internal_rst_done ;
 
+//######################################
+//####       PAXOS LOGIC
+//######################################
+
+// BLACK-BOX
+
 endmodule // p4_processor
