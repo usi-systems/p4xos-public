@@ -125,7 +125,7 @@ always @ ( posedge tin_aclk )
 
           if( tin_avalid == 1 && tin_bready == 1 )
 
-          begin // IDLE ==> WRD1
+          begin // IDLE ==> WRDN
 
            tin_aready <= 1;
 
@@ -137,7 +137,7 @@ always @ ( posedge tin_aclk )
            tin_valid <= 1;
            tin_data <= tin_atuser;
    
-            state <= 3'b001; // WRD1
+            state <= 3'b001; // WRDN
 
           end
 
