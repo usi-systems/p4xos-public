@@ -123,21 +123,21 @@ always @ ( posedge tin_aclk )
     ////////////////////////// 
       3'b000 : begin
 
-          if( tin_avalid == 1 && tin_bready == 1 )
+          if( tin_avalid == 1 )
 
-          begin // IDLE ==> WRDN
+          begin // IDLE ==> WAIT
 
-           tin_aready <= 1;
+           tin_aready <= 0;
 
            tin_bvalid <= 1;
            tin_bdata <= tin_adata;
            tin_bkeep <= tin_akeep;
            tin_btlast <= 0;
         
-           tin_valid <= 1;
+           tin_valid <= 0;
            tin_data <= tin_atuser;
    
-            state <= 3'b001; // WRDN
+            state <= 3'b001; // WAIT
 
           end
 
@@ -162,34 +162,33 @@ always @ ( posedge tin_aclk )
            end
 
     ////////////////////////// 
-    //    STATE S001: WRDN
+    //    STATE S001: WAIT
     ////////////////////////// 
-      // 3'b001 : begin
        3'b001 : begin
 
-           if( tin_atlast == 1)
+           if( tin_bready == 1 )
 
-           begin // WRDN ==> IDLE
+           begin // WAIT ==> IDLE
 
            tin_aready <= 1;
 
            tin_bvalid <= 1;
            tin_bdata <= tin_adata;
            tin_bkeep <= tin_akeep;
-           tin_btlast <= 1;
+           tin_btlast <= 0;
         
-           tin_valid <= 0;
+           tin_valid <= 1;
            tin_data <= tin_atuser;
        
-          state <= 3'b000; // IDLE
+          state <= 3'b010; // GO
 
            end
 
            else
 
-           begin // WRDN ==> WRDN
+           begin // WAIT ==> WAIT
                      
-            tin_aready <= 1;
+            tin_aready <= 0;
 
             tin_bvalid <= 1;
             tin_bdata <= tin_adata;
@@ -199,11 +198,54 @@ always @ ( posedge tin_aclk )
             tin_valid <= 0;
             tin_data <= tin_atuser;
        
-             state <= 3'b001; // WRDN
+             state <= 3'b001; // WAIT
 
            end
 
             end
+
+      ////////////////////////// 
+      //    STATE S010: GO
+      ////////////////////////// 
+      3'b010 : begin
+
+             if( tin_atlast == 1)
+
+             begin // GO ==> IDLE
+
+             tin_aready <= 0;
+
+             tin_bvalid <= 0;
+             tin_bdata <= tin_adata;
+             tin_bkeep <= tin_akeep;
+             tin_btlast <= 1;
+          
+             tin_valid <= 0;
+             tin_data <= tin_atuser;
+         
+            state <= 3'b000; // IDLE
+
+             end
+
+             else
+
+             begin // GO ==> GO
+                       
+              tin_aready <= 1;
+
+              tin_bvalid <= 1;
+              tin_bdata <= tin_adata;
+              tin_bkeep <= tin_akeep;
+              tin_btlast <= 0;
+              
+              tin_valid <= 0;
+              tin_data <= tin_atuser;
+         
+               state <= 3'b010; // GO
+
+             end
+
+              end
 
 
    endcase
