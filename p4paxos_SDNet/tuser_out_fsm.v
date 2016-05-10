@@ -48,8 +48,8 @@ dbg_state
 //######################################
 
 // CLK & RST
-input                                [0:0]                       tin_aclk ;
-input                                [0:0]                       tin_arst ;
+input                                [0:0]                       tout_aclk ;
+input                                [0:0]                       tout_arst ;
 
 // AXIS INPUT INTERFACE
 input                                [0:0]                       tout_avalid ;
@@ -59,8 +59,8 @@ input                                [31:0]                      tout_akeep ;
 input                                [0:0]                       tout_atlast ;
 
 // TUPLE INPUT INTERFACE
-input                        reg    [0:0]                        tout_valid ;
-input                        reg    [127:0]                      tout_data ;
+input                                [0:0]                        tout_valid ;
+input                                [127:0]                      tout_data ;
 
 // AXIS OUTPUT INTERFACE
 output                        reg    [0:0]                       tout_bvalid ;
@@ -68,7 +68,7 @@ input                                [0:0]                       tout_bready ;
 output                        reg    [255:0]                     tout_bdata ;
 output                        reg    [31:0]                      tout_bkeep ;
 output                        reg    [0:0]                       tout_btlast ;
-output                               [127:0]                     tout_atuser ;
+output                        reg    [127:0]                     tout_btuser ;
 
 // DEBUG PORTS
 output                               [0:2]                       dbg_state;
@@ -80,9 +80,8 @@ output                               [0:2]                       dbg_state;
 // FSM STATES
 reg     [0:2]                   state = 3'bxxx ;
 // 000: IDLE
-// 001: WRDN
-
-// CONNECTIONS
+// 001: WAIT
+// 010: GO
 
 // DEBUG
 assign    dbg_state = state ;
@@ -105,7 +104,7 @@ always @ ( posedge tout_aclk )
        tout_bdata <= 0;
        tout_bkeep <= 0;
        tout_btlast <= 0;
-       tout_atuser <= 0;
+       tout_btuser <= 0;
        
        state <= 3'b000; // IDLE
     
@@ -120,18 +119,18 @@ always @ ( posedge tout_aclk )
     ////////////////////////// 
       3'b000 : begin
 
-          if( tout_avalid == 1 && tout_bready == 1 && tout_valid == 1 )
+          if( tout_avalid == 1 )
 
-          begin // IDLE ==> WRDN
+          begin // IDLE ==> WAIT
 
-            tout_aready <= 1;
+            tout_aready <= 0;
             tout_bvalid <= 1;
-            tout_bdata <= 0;
-            tout_bkeep <= 0;
+            tout_bdata <= tout_adata;
+            tout_bkeep <= tout_akeep;
             tout_btlast <= 0;
-            tout_atuser <= 0;
+            tout_btuser <= tout_data;
    
-            state <= 3'b001; // WRDN
+            state <= 3'b001; // WAIT
 
           end
 
@@ -139,15 +138,12 @@ always @ ( posedge tout_aclk )
 
           begin // IDLE ==> IDLE
 
-           tin_aready <= 0;
-
-           tin_bvalid <= 0;
-           tin_bdata <= 0;
-           tin_bkeep <= 0;
-           tin_btlast <= 0;
-        
-           tin_valid <= 0;
-           tin_data <= 0;
+            tout_aready <= 0;
+            tout_bvalid <= 0;
+            tout_bdata <= 0;
+            tout_bkeep <= 0;
+            tout_btlast <= 0;
+            tout_btuser <= 0;
    
             state <= 3'b000; // IDLE
 
@@ -156,52 +152,82 @@ always @ ( posedge tout_aclk )
            end
 
     ////////////////////////// 
-    //    STATE S001: WRDN
+    //    STATE S001: WAIT
     ////////////////////////// 
-      // 3'b001 : begin
        3'b001 : begin
 
-           if( tin_atlast == 1)
+           if( tout_bready == 1 )
 
-           begin // WRDN ==> IDLE
+           begin // WAIT ==> GO
 
-           tin_aready <= 1;
-
-           tin_bvalid <= 1;
-           tin_bdata <= tin_adata;
-           tin_bkeep <= tin_akeep;
-           tin_btlast <= 1;
-        
-           tin_valid <= 0;
-           tin_data <= tin_atuser;
+           tout_aready <= 1;
+           tout_bvalid <= 1;
+           tout_bdata <= tout_adata;
+           tout_bkeep <= tout_akeep;
+           tout_btlast <= 0;
+           tout_btuser <= tout_data;
        
-          state <= 3'b000; // IDLE
+           state <= 3'b010; // GO
 
            end
 
            else
 
-           begin // WRDN ==> WRDN
-                     
-            tin_aready <= 1;
+           begin // WAIT ==> WAIT
 
-            tin_bvalid <= 1;
-            tin_bdata <= tin_adata;
-            tin_bkeep <= tin_akeep;
-            tin_btlast <= 0;
-            
-            tin_valid <= 0;
-            tin_data <= tin_atuser;
-       
-             state <= 3'b001; // WRDN
+           tout_aready <= 0;
+           tout_bvalid <= 1;
+           tout_bdata <= tout_adata;
+           tout_bkeep <= tout_akeep;
+           tout_btlast <= 0;
+           tout_btuser <= tout_data;
+         
+           state <= 3'b001; // WAIT
 
            end
 
             end
+
+        ////////////////////////// 
+        //    STATE S010: GO
+        ////////////////////////// 
+           3'b010 : begin
+
+               if( tout_atlast == 1 )
+
+               begin // GO ==> IDLE
+
+                tout_aready <= 0;
+                tout_bvalid <= 0;
+                tout_bdata <= tout_adata;
+                tout_bkeep <= tout_akeep;
+                tout_btlast <= 1;
+                tout_btuser <= tout_data;
+           
+              state <= 3'b000; // IDLE
+
+               end
+
+               else
+
+               begin // GO ==> GO
+                         
+                tout_aready <= 1;
+                tout_bvalid <= 1;
+                tout_bdata <= tout_adata;
+                tout_bkeep <= tout_akeep;
+                tout_btlast <= 0;
+                tout_btuser <= tout_data;
+           
+                 state <= 3'b010; // GO
+
+               end
+
+                end
 
 
    endcase
 
  end // begin #2
 
-endmodule // tuser_in_fsm
+endmodule // tuser_out_fsm

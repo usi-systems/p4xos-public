@@ -38,7 +38,7 @@ module tuser_in_tb();
     wire  [0:2]                 dbg_state;
     
     // ITERATION VARIABLE
-    reg                         i = 0;
+    reg    [0:3]                i = 0;
    
 // ############################################################################
 
@@ -100,7 +100,7 @@ always #1 clk=~clk; // CLOCK SIGNAL
 
           rst <= 0;
  
-          while (i <= 10) begin                    
+          while (i < 10) begin
                    
           //////////////////////////////
           // PACKET          
@@ -156,6 +156,9 @@ always #1 clk=~clk; // CLOCK SIGNAL
           tin_atlast <= 0;
           tin_atuser <= 0;//128
           tin_bready <= 0;
+
+          // INCREMENT ITERATION VARIABLE
+          i <= i + 1 ; 
           
           end // while
              

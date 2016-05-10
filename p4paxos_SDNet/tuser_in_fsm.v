@@ -80,9 +80,8 @@ output      [0:2]                   dbg_state;
 // FSM STATES
 reg     [0:2]                   state = 3'bxxx ;
 // 000: IDLE
-// 001: WRDN
-
-// CONNECTIONS
+// 001: WAIT
+// 010: GO
 
 // DEBUG
 assign    dbg_state = state ;

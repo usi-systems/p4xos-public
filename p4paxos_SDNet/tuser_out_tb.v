@@ -11,154 +11,166 @@
 
 module tuser_out_tb();
 
-    // CLOCK & RESET
-    reg                         clk;
-    reg                         rst;
-    
-    // AXIS INPUT INTERFACE
-    reg                         tin_avalid ;
-    wire                        tin_aready ;
-    reg [255:0]                 tin_adata ;
-    reg [31:0]                  tin_akeep ;
-    reg                         tin_atlast ;
-    reg [127:0]                 tin_atuser ;
-
-    // AXIS OUTPUT INTERFACE
-    wire                        tin_bvalid ;
-    reg                         tin_bready ;
-    wire[255:0]                 tin_bdata ;
-    wire[31:0]                  tin_bkeep ;
-    wire                        tin_btlast ;
-
-    // TUPLE OUTPUT INTERFACE
-    wire                        tin_valid ;
-    wire  [127:0]               tin_data ;
-
-    // DEBUG PORTS
-    wire  [0:2]                 dbg_state;
-    
-    // ITERATION VARIABLE
-    reg                         i = 0;
-   
-// ############################################################################
-
-tuser_out_fsm  tuser_out_fsm_inst// UUT
-
-(
-
-// CLK & RST
-.tin_aclk                                 (clk),
-.tin_arst                                 (rst),
-
-// AXIS INPUT INTERFACE
-.tin_avalid                               (tin_avalid),
-.tin_aready                               (tin_aready),
-.tin_adata                                (tin_adata),
-.tin_akeep                                (tin_akeep),
-.tin_atlast                               (tin_atlast),
-.tin_atuser                               (tin_atuser),
-
-// AXIS OUTPUT INTERFACE
-.tin_bvalid                               (tin_bvalid),
-.tin_bready                               (tin_bready),
-.tin_bdata                                (tin_bdata),
-.tin_bkeep                                (tin_bkeep),
-.tin_btlast                               (tin_btlast),
-
-// TUPLE OUTPUT INTERFACE
-.tin_valid                                (tin_valid),
-.tin_data                                 (tin_data),
-
-// DEBUG PORTS
-.dbg_state                                (dbg_state)
-
-);
-
-// ############################################################################ 
-    
-always #1 clk=~clk; // CLOCK SIGNAL
-      
-      initial begin
-          
-          // INITIAL VALUES
- 
-          clk <= 0;
-          rst <= 0; 
- 
-          tin_avalid <= 0;
-          tin_adata <= 256'b0;//256
-          tin_akeep <= 32'b0;//32
-          tin_atlast <= 0;
-          tin_atuser <= 128'b0;//128
-          tin_bready <= 0;
-
-          // INITIAL RESET
+       // CLOCK & RESET
+       reg                         clk;
+       reg                         rst;
        
-          rst <= 1;
+       // AXIS INPUT INTERFACE
+       reg                         tout_avalid ;
+       wire                        tout_aready ;
+       reg    [255:0]              tout_adata ;
+       reg    [31:0]               tout_akeep ;
+       reg                         tout_atlast ;
 
-          #4
+        // TUPLE INPUT INTERFACE
+       reg                         tout_valid ;
+       reg    [127:0]              tout_data ;
+       
 
-          rst <= 0;
- 
-          while (i <= 10) begin                    
-                   
-          //////////////////////////////
-          // PACKET          
-          //////////////////////////////
-          
-          #4
+       // AXIS OUTPUT INTERFACE
+       wire                        tout_bvalid ;
+       reg                         tout_bready ;
+       wire   [255:0]              tout_bdata ;
+       wire   [31:0]               tout_bkeep ;
+       wire                        tout_btlast ;
+       wire   [127:0]              tout_btuser ;
 
-          tin_avalid <= 0;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
+       // DEBUG PORTS
+       wire   [0:2]                dbg_state;
+       
+       // ITERATION VARIABLE
+       reg    [0:3]                i = 0;
+      
+   // ############################################################################
 
-          #2
-          
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
+   tuser_out_fsm  tuser_out_fsm_inst// UUT
 
-          while (tin_aready != 1) begin
-          #2;// wait
-          end 
+   (
 
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 0;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
+   // CLK & RST
+   .tout_aclk                                 (clk),
+   .tout_arst                                 (rst),
 
-          #3
+   // AXIS INPUT INTERFACE
+   .tout_avalid                               (tout_avalid),
+   .tout_aready                               (tout_aready),
+   .tout_adata                                (tout_adata),
+   .tout_akeep                                (tout_akeep),
+   .tout_atlast                               (tout_atlast),
 
-          tin_avalid <= 1;
-          tin_adata <= 22222;//256
-          tin_akeep <= 33333;//32
-          tin_atlast <= 1;
-          tin_atuser <= 44444;//128
-          tin_bready <= 1;
-          
-          #2
-          
-          //////////////////////////////
-          // EMPTY PACKET          
-          //////////////////////////////
-          
-          tin_avalid <= 0;
-          tin_adata <= 0;//256
-          tin_akeep <= 0;//32
-          tin_atlast <= 0;
-          tin_atuser <= 0;//128
-          tin_bready <= 0;
-          
-          end // while
+   // TUPLE INPUT INTERFACE
+   .tout_valid                                (tout_valid),
+   .tout_data                                 (tout_data),
+   
+   // AXIS OUTPUT INTERFACE
+   .tout_bvalid                               (tout_bvalid),
+   .tout_bready                               (tout_bready),
+   .tout_bdata                                (tout_bdata),
+   .tout_bkeep                                (tout_bkeep),
+   .tout_btlast                               (tout_btlast),
+   .tout_btuser                               (tout_btuser),
+
+   // DEBUG PORTS
+   .dbg_state                                 (dbg_state)
+
+   );
+
+   // ############################################################################ 
+       
+   always #1 clk=~clk; // CLOCK SIGNAL
+         
+         initial begin
              
-      end // INITIAL
-  
-endmodule
+             // INITIAL VALUES
+    
+             clk <= 0;
+             rst <= 0; 
+            
+             tout_avalid <= 0;
+             tout_adata <= 256'b0;//256
+             tout_akeep <= 32'b0;//32
+             tout_atlast <= 0;
+             tout_valid <= 0;
+             tout_data <= 128'b0;//128
+             tout_bready <= 0;
+
+             // INITIAL RESET
+          
+             rst <= 1;
+
+             #4
+
+             rst <= 0;
+    
+             while (i < 10) begin                    
+                      
+             //////////////////////////////
+             // PACKET          
+             //////////////////////////////
+             
+             #4
+
+             tout_avalid <= 0;
+             tout_adata <= 22222;//256
+             tout_akeep <= 33333;//32
+             tout_atlast <= 0;
+             tout_valid <= 1;
+             tout_data <= 44444;//128
+             tout_bready <= 1;
+
+             #2
+             
+             tout_avalid <= 1;
+             tout_adata <= 22222;//256
+             tout_akeep <= 33333;//32
+             tout_atlast <= 0;
+             tout_valid <= 1;
+             tout_data <= 44444;//128
+             tout_bready <= 1;
+             
+             #1
+
+             while (tout_aready != 1) begin
+             #2;// wait
+             end 
+
+             tout_avalid <= 1;
+             tout_adata <= 22222;//256
+             tout_akeep <= 33333;//32
+             tout_atlast <= 0;
+             tout_valid <= 0;
+             tout_data <= 44444;//128
+             tout_bready <= 1; 
+
+             #3
+
+             tout_avalid <= 1;
+             tout_adata <= 22222;//256
+             tout_akeep <= 33333;//32
+             tout_atlast <= 1;
+             tout_valid <= 0;
+             tout_data <= 44444;//128
+             tout_bready <= 1; 
+
+             #2
+             
+             //////////////////////////////
+             // EMPTY PACKET          
+             //////////////////////////////
+
+             tout_avalid <= 0;
+             tout_adata <= 0;//256
+             tout_akeep <= 0;//32
+             tout_atlast <= 0;
+             tout_valid <= 0;
+             tout_data <= 0;//128
+             tout_bready <= 0;
+
+             // INCREMENT ITERATION VARIABLE
+             i <= i + 1 ; 
+             
+             end // while
+                
+         end // INITIAL
+     
+   endmodule
