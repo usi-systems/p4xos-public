@@ -100,7 +100,10 @@ always #1 clk=~clk; // CLOCK SIGNAL
 
           rst <= 0;
  
-          while (i < 10) begin
+          while (i < 10) begin  
+          
+          // INCREMENT ITERATION VARIABLE
+          i <= i + 1 ;                    
                    
           //////////////////////////////
           // PACKET          
@@ -156,11 +159,11 @@ always #1 clk=~clk; // CLOCK SIGNAL
           tin_atlast <= 0;
           tin_atuser <= 0;//128
           tin_bready <= 0;
-
-          // INCREMENT ITERATION VARIABLE
-          i <= i + 1 ; 
           
           end // while
+          
+          // RESET ITERATION VARIABLE
+          i <= 0 ;               
              
       end // INITIAL
   

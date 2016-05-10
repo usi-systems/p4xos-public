@@ -102,7 +102,10 @@ module tuser_out_tb();
 
              rst <= 0;
     
-             while (i < 10) begin                    
+             while (i < 10) begin
+             
+             // INCREMENT ITERATION VARIABLE
+             i <= i + 1 ;                     
                       
              //////////////////////////////
              // PACKET          
@@ -165,11 +168,11 @@ module tuser_out_tb();
              tout_valid <= 0;
              tout_data <= 0;//128
              tout_bready <= 0;
-
-             // INCREMENT ITERATION VARIABLE
-             i <= i + 1 ; 
              
              end // while
+             
+             // RESET ITERATION VARIABLE
+             i <= 0 ;               
                 
          end // INITIAL
      

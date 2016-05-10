@@ -81,6 +81,14 @@ output													S_AXI_AWREADY
 //####     WIRES & REGISTERS
 //#################################
 
+// WRAPPER AXIS INPUT INTERFACE
+wire		[0:0]										wire_axis_input_TVALID ;
+wire 		[0:0]										wire_axis_input_TREADY ;
+wire		[255:0]										wire_axis_input_TDATA ;
+wire		[127:0]										wire_axis_input_TUSER ;
+wire		[31:0]										wire_axis_input_TKEEP ;
+wire		[0:0]										wire_axis_input_TLAST ;
+
 // AXIS PACKET INPUT INTERFACE
 wire		[0:0]										wire_packet_in_packet_in_TVALID ;
 wire 		[0:0]										wire_packet_in_packet_in_TREADY ;
@@ -107,6 +115,14 @@ wire 		[31:0]										wire_control_S_AXI_RDATA ;
 wire 		[1:0] 										wire_control_S_AXI_RRESP ;
 wire 		[0:0] 										wire_control_S_AXI_RVALID ;
 wire 		[0:0] 										wire_control_S_AXI_RREADY ;
+
+// WRAPPER AXIS OUTPUT INTERFACE
+wire 		[0:0] 										wire_axis_output_TVALID ;
+wire 		[0:0] 										wire_axis_output_TREADY ;
+wire 		[255:0]										wire_axis_output_TDATA ;
+wire 		[127:0]										wire_axis_output_TUSER ;
+wire 		[31:0]										wire_axis_output_TKEEP ;
+wire 		[0:0] 										wire_axis_output_TLAST ;
 
 // AXIS PACKET OUTPUT INTERFACE
 wire 		[0:0] 										wire_packet_out_packet_out_TVALID ;
@@ -206,11 +222,35 @@ assign 		wire_clk_tuple = axis_aclk ;
 
 tuser_in_fsm tuser_in_fsm_inst (
 
+	// AXIS INPUT INTERFACE
+	tin_avalid,
+	tin_aready,
+	tin_adata,
+	tin_akeep,
+	tin_atlast,
+	tin_atuser,
+
+	// AXIS OUTPUT INTERFACE
+	tin_bvalid,
+	tin_bready,
+	tin_bdata,
+	tin_bkeep,
+	tin_btlast,
+
+	// TUPLE OUTPUT INTERFACE
+	tin_valid,
+	tin_data,
+
+	// DEBUG PORTS
+	dbg_state
+
+
+
 // CLK & RST
 .tin_aclk												(wire_clk_tuple),
 .tin_arst												(reg_tuple_rst),
 
-// AXIS INPUT
+// AXIS INPUT INTERFACE
 .tin_avalid												(wire_packet_in_packet_in_TVALID),
 //.tin_adata												(wire_packet_in_packet_in_TDATA),
 .tin_atuser												(wire_packet_in_packet_in_TUSER),
