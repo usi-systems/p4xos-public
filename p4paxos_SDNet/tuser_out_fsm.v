@@ -15,7 +15,7 @@ module tuser_out_fsm (
 //####       INTERFACES
 //#################################
 
-/// CLK & RST
+// CLK & RST
 tout_aclk,
 tout_arst,
 
