@@ -36,15 +36,15 @@ parameter 												C_S_AXI_ADDR_WIDTH = 12
 input 													axis_aclk,
 input 													axis_resetn,
 
-// AXIS PACKET OUTPUT INTERFACE
+// AXIS PACKET INPUT INTERFACE
 output 		[C_M_AXIS_DATA_WIDTH - 1:0] 				m_axis_tdata,
 output 		[((C_M_AXIS_DATA_WIDTH / 8)) - 1:0] 		m_axis_tkeep,
-output reg	[C_M_AXIS_TUSER_WIDTH-1:0] 					m_axis_tuser,
+output  	[C_M_AXIS_TUSER_WIDTH-1:0] 					m_axis_tuser,
 output 													m_axis_tvalid,
 input 													m_axis_tready,
 output 													m_axis_tlast,
 
-// AXIS PACKET INPUT INTERFACE
+// AXIS PACKET OUTPUT INTERFACE
 input 		[C_S_AXIS_DATA_WIDTH - 1:0] 				s_axis_tdata,
 input 		[((C_S_AXIS_DATA_WIDTH / 8)) - 1:0] 		s_axis_tkeep,
 input 		[C_S_AXIS_TUSER_WIDTH-1:0] 					s_axis_tuser,
@@ -265,7 +265,7 @@ tuser_out_fsm tuser_out_fsm_inst (
 .tout_aready											(wire_packet_out_packet_out_TREADY),
 .tout_adata												(wire_packet_out_packet_out_TDATA),
 .tout_akeep												(wire_packet_out_packet_out_TKEEP),
-.tout_tlast												(wire_packet_out_packet_out_TLAST),
+.tout_atlast											(wire_packet_out_packet_out_TLAST),
 
 // TUPLE INPUT
 .tout_valid												(wire_tout_valid),
