@@ -1,0 +1,215 @@
+class Packet_input :: Packet(in) {}
+class Packet_output :: Packet(out) {}
+
+
+class PaxosSystem :: System {
+    Packet_input instream;
+    Packet_output outstream;
+    SimpleParser parser;
+    method connect = {
+        parser.packet_in = instream,
+        outstream = parser.packet_out
+    }
+}
+
+class SimpleParser :: ParsingEngine (9416*8 , 6, ETH) {
+    const VLAN_TYPE = 0x8100;
+    const IPv4_TYPE = 0x0800;
+    const IPv6_TYPE = 0x86dd;
+    const TCP_TYPE = 0x06;
+    const UDP_TYPE = 0x11;
+    // For done() statements
+    const SUCCESS = 0;
+    const FAILURE = 1;
+
+    class ParsedTuple :: Tuple (out) {
+        struct {
+            dmac : 48, // Destination MAC address
+            smac : 48, // Source MAC address
+            tpid : 16, // Tag Protocol Identifier
+            ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
+            prot : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
+            src : 128, // IPv4/v6 source address
+            dst : 128, // IPv4/v6 destination address
+            sp : 16, // TCP/UDP source port
+            dp : 16 // TCP/UDP destination port
+        }
+    } // ParsedTuple
+    ParsedTuple fields;
+
+    // Ethernet MAC header
+    class ETH :: Section(1) {
+        struct {
+            dmac : 48, // Destination MAC address
+            smac : 48, // Source MAC address
+            type : 16 // Tag Protocol Identifier
+        }
+
+        method update = {
+            fields.dmac = dmac,
+            fields.smac = smac
+        }
+
+        map types {
+            (VLAN_TYPE, VLAN),
+            (IPv6_TYPE, IPv6),
+            (IPv4_TYPE, IPv4),
+            done(FAILURE)
+        }
+        method move_to_section = types(type);
+        method increment_offset = 112;
+    } // ETH
+
+
+    class VLAN :: Section(2:3) {
+        struct {
+            pcp : 3,
+            cfi : 1,
+            vid : 12,
+            tpid : 16
+        }
+        // Mapping table of type field to class
+        // VLAN can be followed by a second VLAN, IPv4, or IPv6
+        map types {
+            (VLAN_TYPE, VLAN),
+            (IPv4_TYPE, IPv4),
+            (IPv6_TYPE, IPv6),
+            done(FAILURE)
+        }
+        // Extract Tpid to output tuple
+        method update = {
+            fields.tpid = tpid
+        }
+        // Find next protocol
+        method increment_offset = 32;
+        // For next protocol use class looked up in “types” table
+        method move_to_section = types(tpid);
+    } // VLAN
+
+
+    class IPv4 :: Section(2:4) {
+        struct {
+            version : 4, // Version (4 for IPv4)
+            hdr_len : 4, // Header length in 32b words
+            tos : 8, // Type of Service
+            length : 16, // Packet length in 32b words
+            id : 16, // Identification
+            flags : 3, // Flags
+            offset : 13, // Fragment offset
+            ttl : 8, // Time to live
+            protocol: 8, // Next protocol
+            hdr_chk : 16, // Header checksum
+            src : 32, // Source address
+            dst : 32 // Destination address
+        }
+
+        method update = {
+            fields.ipv4 = 1,
+            fields.prot = protocol,
+            fields.src = src,
+            fields.dst = dst
+        }
+        // Move by a number of bits equal to the value in hdr_len
+        // multiplied by 32 (hdr_len is the length of the header in
+        // 32-bit words)
+        method increment_offset = hdr_len * 32;
+        // Next header is TCP or UDP
+        method move_to_section =
+            if (protocol == TCP_TYPE)
+                TCP
+            else if (protocol == UDP_TYPE)
+                UDP
+            else
+                done(FAILURE);
+    } // IPv4
+
+
+    class IPv6 :: Section(2:4) {
+        struct {
+            version : 4, // Version = 6
+            priority : 8, // Traffic class
+            flow_label : 20, // Flow label
+            length : 16, // Payload length
+            next_hdr : 8, // Next protocol
+            hop_limit : 8, // Hop limit
+            src_addr : 128, // Source address
+            dst_addr : 128 // Destination address
+        }
+
+        method update = {
+            fields.ipv4 = 0,
+            fields.prot = next_hdr,
+            fields.src = src_addr,
+            fields.dst = dst_addr
+        }
+
+        method move_to_section =
+        if (next_hdr == TCP_TYPE)
+            TCP
+        else if (next_hdr == UDP_TYPE)
+            UDP
+        else
+            done(FAILURE);
+
+        method increment_offset = 320;
+    } // IPv6
+
+
+    class TCP :: Section(3:5) {
+        struct {
+            src_port : 16, // Source port
+            dst_port : 16, // Destination port
+            seqNum : 32, // Sequence number
+            ackNum : 32, // Acknowledgment number
+            dataOffset : 4, // Data offset
+            resv : 6, // Offset
+            flags : 6, // Flags
+            window : 16, // Window
+            checksum : 16, // TCP checksum
+            urgPtr : 16 // Urgent pointer
+        }
+
+        method update = {
+            fields.sp = src_port,
+            fields.dp = dst_port
+        }
+
+        method increment_offset = dataOffset * 32;
+        method move_to_section = done(SUCCESS);
+    } // TCP
+
+    class UDP :: Section (3:5) {
+        struct {
+            src_port : 16, // Source port
+            dst_port : 16, // Destination port
+            length : 16, // UDP length
+            checksum : 16 // UDP checksum
+        }
+
+        method update = {
+            fields.sp = src_port,
+            fields.dp = dst_port
+        }
+
+        method increment_offset = 64;
+        method move_to_section =
+        if (dst_port == 34951)
+            Paxos
+        else
+            done(SUCCESS);
+    } // UDP
+
+    class Paxos :: Section (4:6) {
+        struct {
+            paxos_type : 16,
+            paxos_instance : 32,
+            ballot : 16,
+            value_ballot : 16,
+            acceptor_id : 16,
+            value : 32
+        }
+
+        method increment_offset = 128;
+        method move_to_section = done(SUCCESS);
+    } // Paxos
+} // SimpleParser
