@@ -16,8 +16,7 @@ class EditorTuple :: Tuple (in) {
         sp : 16, // TCP/UDP source port
         dp : 16 // TCP/UDP destination port
     }
-} // ParsedTuple
-
+} // EditorTuple
 
 class ParsedTuple :: Tuple (out) {
     struct {
@@ -36,33 +35,31 @@ class ParsedTuple :: Tuple (out) {
     }
 } // ParsedTuple
 
-
 class KeyTuple :: Tuple(out) {
     struct {
         dst_port : 16,
         paxos_type : 16
     }
-}
+} // KeyTuple
 
 class OutputTuple :: Tuple(in) {
     struct {
         dst_port : 16
     }
-}
-
+} // OutputTuple
 
 class RequestTuple :: Tuple(in) {
     struct {
         dst_port : 16,
         paxos_type : 16
     }
-}
+} // RequestTuple
 
 class ResultTuple :: Tuple(out) {
     struct {
         dst_port : 16
     }
-}
+} // ResultTuple
 
 class PaxosSystem :: System {
     // Interfaces, packet ports
@@ -82,8 +79,7 @@ class PaxosSystem :: System {
         editor.outputTuple = lookup.response,
         outstream = editor.packet_out
     }
-}
-
+} // PaxosSystem
 
 class PaxosLookup :: LookupEngine (EM, 64, 32, 16, 0, 0 ) {
 
@@ -99,7 +95,7 @@ class PaxosLookup :: LookupEngine (EM, 64, 32, 16, 0, 0 ) {
     }
 }
 
-class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
+class PaxosParser :: ParsingEngine (1500*8 , 6, ETH) {
     const VLAN_TYPE = 0x8100;
     const IPv4_TYPE = 0x0800;
     const IPv6_TYPE = 0x86dd;
@@ -295,8 +291,7 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
     } // Paxos
 } // PaxosParser
 
-
-class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
+class PaxosEditor :: EditingEngine (1500*8 , 6, ETH) {
     const VLAN_TYPE = 0x8100;
     const IPv4_TYPE = 0x0800;
     const IPv6_TYPE = 0x86dd;
@@ -324,7 +319,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
         }
 
         method move_to_section = types(editorTuple.type);
-        method increment_offset = 112;
     } // ETH
 
 
@@ -343,7 +337,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
             done(FAILURE)
         }
 
-        method increment_offset = 32;
         method move_to_section = types(editorTuple.tpid);
     } // VLAN
 
@@ -370,7 +363,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
             done(FAILURE)
         }
 
-        method increment_offset = editorTuple.hdr_len * 32;
         method move_to_section = types(editorTuple.protocol);
     } // IPv4
 
@@ -394,7 +386,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
         }
 
         method move_to_section = types(editorTuple.protocol);
-        method increment_offset = 320;
     } // IPv6
 
 
@@ -412,7 +403,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
             urgPtr : 16 // Urgent pointer
         }
 
-        method increment_offset = editorTuple.dataOffset * 32;
         method move_to_section = done(SUCCESS);
     } // TCP
 
@@ -428,7 +418,6 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
             dst_port = outputTuple.dst_port
         }
 
-        method increment_offset = 64;
         method move_to_section =
         if (editorTuple.dp == 34951 || editorTuple.dp == 34952)
             Paxos
@@ -446,7 +435,7 @@ class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
             value : 32
         }
 
-        method increment_offset = 128;
+        method increment_offset = 0;
         method move_to_section = done(SUCCESS);
     } // Paxos
 } // PaxosEditor
