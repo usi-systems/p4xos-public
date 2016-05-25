@@ -1,44 +1,94 @@
 class Packet_input :: Packet(in) {}
 class Packet_output :: Packet(out) {}
 
-class Tuple_output :: Tuple(out) {
+class EditorTuple :: Tuple (in) {
     struct {
-        output : 16
+        type : 16, // Ethernet Type
+        dmac : 48, // Destination MAC address
+        smac : 48, // Source MAC address
+        hdr_len : 4, // IP header len
+        tpid : 16, // Tag Protocol Identifier
+        ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
+        protocol : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
+        dataOffset : 4, // IPv4 dataOffset
+        src : 128, // IPv4/v6 source address
+        dst : 128, // IPv4/v6 destination address
+        sp : 16, // TCP/UDP source port
+        dp : 16 // TCP/UDP destination port
+    }
+} // ParsedTuple
+
+
+class ParsedTuple :: Tuple (out) {
+    struct {
+        type : 16, // Ethernet Type
+        dmac : 48, // Destination MAC address
+        smac : 48, // Source MAC address
+        hdr_len : 4, // IP header len
+        tpid : 16, // Tag Protocol Identifier
+        ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
+        protocol : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
+        dataOffset : 4, // IPv4 dataOffset
+        src : 128, // IPv4/v6 source address
+        dst : 128, // IPv4/v6 destination address
+        sp : 16, // TCP/UDP source port
+        dp : 16 // TCP/UDP destination port
+    }
+} // ParsedTuple
+
+
+class KeyTuple :: Tuple(out) {
+    struct {
+        dst_port : 16,
+        paxos_type : 16
+    }
+}
+
+class OutputTuple :: Tuple(in) {
+    struct {
+        dst_port : 16
     }
 }
 
 
+class RequestTuple :: Tuple(in) {
+    struct {
+        dst_port : 16,
+        paxos_type : 16
+    }
+}
+
+class ResultTuple :: Tuple(out) {
+    struct {
+        dst_port : 16
+    }
+}
+
 class PaxosSystem :: System {
+    // Interfaces, packet ports
     Packet_input instream;
     Packet_output outstream;
-    Tuple_output portstream;
 
+    // Engine instances
     PaxosParser parser;
     PaxosLookup lookup;
+    PaxosEditor editor;
 
     method connect = {
         parser.packet_in = instream,
-        lookup.request = parser.paxos_fields,
-        outstream = parser.packet_out,
-        portstream = lookup.response
+        lookup.request = parser.extractedKey,
+        editor.packet_in = parser.packet_out,
+        editor.editorTuple = parser.fields,
+        editor.outputTuple = lookup.response,
+        outstream = editor.packet_out
     }
 }
 
 
 class PaxosLookup :: LookupEngine (EM, 64, 32, 16, 0, 0 ) {
-    class request_tuple :: Tuple(in) {
-        struct {
-            dst_port : 16,
-            paxos_type : 16
-        }
-    }
-    class result_tuple :: Tuple(out) {
-        struct {
-            dst_port : 16
-        }
-    }
-    request_tuple request;
-    result_tuple response;
+
+    RequestTuple request;
+    ResultTuple response;
 
     method send_request = {
         key = request
@@ -48,29 +98,6 @@ class PaxosLookup :: LookupEngine (EM, 64, 32, 16, 0, 0 ) {
         response = value
     }
 }
-
-class ParsedTuple :: Tuple (out) {
-    struct {
-        dmac : 48, // Destination MAC address
-        smac : 48, // Source MAC address
-        tpid : 16, // Tag Protocol Identifier
-        ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
-        prot : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
-        src : 128, // IPv4/v6 source address
-        dst : 128, // IPv4/v6 destination address
-        sp : 16, // TCP/UDP source port
-        dp : 16 // TCP/UDP destination port
-    }
-} // ParsedTuple
-
-
-class PaxosTuple :: Tuple (out) {
-    struct {
-        dst_port : 16,
-        paxos_type : 16
-    }
-} // PaxosTuple
-
 
 class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
     const VLAN_TYPE = 0x8100;
@@ -82,9 +109,8 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
     const SUCCESS = 0;
     const FAILURE = 1;
 
-
     ParsedTuple fields;
-    PaxosTuple paxos_fields;
+    KeyTuple extractedKey;
 
     // Ethernet MAC header
     class ETH :: Section(1) {
@@ -96,7 +122,8 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
 
         method update = {
             fields.dmac = dmac,
-            fields.smac = smac
+            fields.smac = smac,
+            fields.type = type
         }
 
         map types {
@@ -154,7 +181,8 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
 
         method update = {
             fields.ipv4 = 1,
-            fields.prot = protocol,
+            fields.hdr_len = hdr_len,
+            fields.protocol = protocol,
             fields.src = src,
             fields.dst = dst
         }
@@ -187,7 +215,7 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
 
         method update = {
             fields.ipv4 = 0,
-            fields.prot = next_hdr,
+            fields.protocol = next_hdr,
             fields.src = src_addr,
             fields.dst = dst_addr
         }
@@ -238,7 +266,7 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
         method update = {
             fields.sp = src_port,
             fields.dp = dst_port,
-            paxos_fields.dst_port = dst_port
+            extractedKey.dst_port = dst_port
         }
 
         method increment_offset = 64;
@@ -259,10 +287,166 @@ class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
             value : 32
         }
         method update = {
-            paxos_fields.paxos_type = paxos_type
+            extractedKey.paxos_type = paxos_type
         }
 
         method increment_offset = 128;
         method move_to_section = done(SUCCESS);
     } // Paxos
 } // PaxosParser
+
+
+class PaxosEditor :: EditingEngine (9416*8 , 6, ETH) {
+    const VLAN_TYPE = 0x8100;
+    const IPv4_TYPE = 0x0800;
+    const IPv6_TYPE = 0x86dd;
+    const TCP_TYPE = 0x06;
+    const UDP_TYPE = 0x11;
+    // For done() statements
+    const SUCCESS = 0;
+    const FAILURE = 1;
+
+    EditorTuple editorTuple;
+    OutputTuple outputTuple;
+
+    class ETH :: Section(1) {
+        struct {
+            dmac : 48, // Destination MAC address
+            smac : 48, // Source MAC address
+            ethtype : 16 // Tag Protocol Identifier
+        }
+
+        map types {
+            (VLAN_TYPE, VLAN),
+            (IPv6_TYPE, IPv6),
+            (IPv4_TYPE, IPv4),
+            done(FAILURE)
+        }
+
+        method move_to_section = types(editorTuple.type);
+        method increment_offset = 112;
+    } // ETH
+
+
+    class VLAN :: Section(2:3) {
+        struct {
+            pcp : 3,
+            cfi : 1,
+            vid : 12,
+            tpid : 16
+        }
+
+        map types {
+            (VLAN_TYPE, VLAN),
+            (IPv4_TYPE, IPv4),
+            (IPv6_TYPE, IPv6),
+            done(FAILURE)
+        }
+
+        method increment_offset = 32;
+        method move_to_section = types(editorTuple.tpid);
+    } // VLAN
+
+
+    class IPv4 :: Section(2:4) {
+        struct {
+            version : 4, // Version (4 for IPv4)
+            hdr_len : 4, // Header length in 32b words
+            tos : 8, // Type of Service
+            length : 16, // Packet length in 32b words
+            id : 16, // Identification
+            flags : 3, // Flags
+            offset : 13, // Fragment offset
+            ttl : 8, // Time to live
+            protocol: 8, // Next protocol
+            hdr_chk : 16, // Header checksum
+            src : 32, // Source address
+            dst : 32 // Destination address
+        }
+
+        map types {
+            (TCP_TYPE, TCP),
+            (UDP_TYPE, UDP),
+            done(FAILURE)
+        }
+
+        method increment_offset = editorTuple.hdr_len * 32;
+        method move_to_section = types(editorTuple.protocol);
+    } // IPv4
+
+
+    class IPv6 :: Section(2:4) {
+        struct {
+            version : 4, // Version = 6
+            priority : 8, // Traffic class
+            flow_label : 20, // Flow label
+            length : 16, // Payload length
+            next_hdr : 8, // Next protocol
+            hop_limit : 8, // Hop limit
+            src_addr : 128, // Source address
+            dst_addr : 128 // Destination address
+        }
+
+        map types {
+            (TCP_TYPE, TCP),
+            (UDP_TYPE, UDP),
+            done(FAILURE)
+        }
+
+        method move_to_section = types(editorTuple.protocol);
+        method increment_offset = 320;
+    } // IPv6
+
+
+    class TCP :: Section(3:5) {
+        struct {
+            src_port : 16, // Source port
+            dst_port : 16, // Destination port
+            seqNum : 32, // Sequence number
+            ackNum : 32, // Acknowledgment number
+            dataOffset : 4, // Data offset
+            resv : 6, // Offset
+            flags : 6, // Flags
+            window : 16, // Window
+            checksum : 16, // TCP checksum
+            urgPtr : 16 // Urgent pointer
+        }
+
+        method increment_offset = editorTuple.dataOffset * 32;
+        method move_to_section = done(SUCCESS);
+    } // TCP
+
+    class UDP :: Section (3:5) {
+        struct {
+            src_port : 16, // Source port
+            dst_port : 16, // Destination port
+            length : 16, // UDP length
+            checksum : 16 // UDP checksum
+        }
+
+        method update = {
+            dst_port = outputTuple.dst_port
+        }
+
+        method increment_offset = 64;
+        method move_to_section =
+        if (editorTuple.dp == 34951 || editorTuple.dp == 34952)
+            Paxos
+        else
+            done(SUCCESS);
+    } // UDP
+
+    class Paxos :: Section (4:6) {
+        struct {
+            paxos_type : 16,
+            paxos_instance : 32,
+            ballot : 16,
+            value_ballot : 16,
+            acceptor_id : 16,
+            value : 32
+        }
+
+        method increment_offset = 128;
+        method move_to_section = done(SUCCESS);
+    } // Paxos
+} // PaxosEditor
