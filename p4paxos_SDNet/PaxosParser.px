@@ -1,18 +1,78 @@
 class Packet_input :: Packet(in) {}
 class Packet_output :: Packet(out) {}
 
+class Tuple_output :: Tuple(out) {
+    struct {
+        output : 16
+    }
+}
+
 
 class PaxosSystem :: System {
     Packet_input instream;
     Packet_output outstream;
-    SimpleParser parser;
+    Tuple_output portstream;
+
+    PaxosParser parser;
+    PaxosLookup lookup;
+
     method connect = {
         parser.packet_in = instream,
-        outstream = parser.packet_out
+        lookup.request = parser.paxos_fields,
+        outstream = parser.packet_out,
+        portstream = lookup.response
     }
 }
 
-class SimpleParser :: ParsingEngine (9416*8 , 6, ETH) {
+
+class PaxosLookup :: LookupEngine (EM, 64, 32, 16, 0, 0 ) {
+    class request_tuple :: Tuple(in) {
+        struct {
+            dst_port : 16,
+            paxos_type : 16
+        }
+    }
+    class result_tuple :: Tuple(out) {
+        struct {
+            dst_port : 16
+        }
+    }
+    request_tuple request;
+    result_tuple response;
+
+    method send_request = {
+        key = request
+    }
+
+    method receive_response = {
+        response = value
+    }
+}
+
+class ParsedTuple :: Tuple (out) {
+    struct {
+        dmac : 48, // Destination MAC address
+        smac : 48, // Source MAC address
+        tpid : 16, // Tag Protocol Identifier
+        ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
+        prot : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
+        src : 128, // IPv4/v6 source address
+        dst : 128, // IPv4/v6 destination address
+        sp : 16, // TCP/UDP source port
+        dp : 16 // TCP/UDP destination port
+    }
+} // ParsedTuple
+
+
+class PaxosTuple :: Tuple (out) {
+    struct {
+        dst_port : 16,
+        paxos_type : 16
+    }
+} // PaxosTuple
+
+
+class PaxosParser :: ParsingEngine (9416*8 , 6, ETH) {
     const VLAN_TYPE = 0x8100;
     const IPv4_TYPE = 0x0800;
     const IPv6_TYPE = 0x86dd;
@@ -22,20 +82,9 @@ class SimpleParser :: ParsingEngine (9416*8 , 6, ETH) {
     const SUCCESS = 0;
     const FAILURE = 1;
 
-    class ParsedTuple :: Tuple (out) {
-        struct {
-            dmac : 48, // Destination MAC address
-            smac : 48, // Source MAC address
-            tpid : 16, // Tag Protocol Identifier
-            ipv4 : 1, // IPv4/v6 flag (0 = IPv6, 1 = IPv4)
-            prot : 8, // Protocol encapsulated in IPv4/v6 (TCP/UDP)
-            src : 128, // IPv4/v6 source address
-            dst : 128, // IPv4/v6 destination address
-            sp : 16, // TCP/UDP source port
-            dp : 16 // TCP/UDP destination port
-        }
-    } // ParsedTuple
+
     ParsedTuple fields;
+    PaxosTuple paxos_fields;
 
     // Ethernet MAC header
     class ETH :: Section(1) {
@@ -188,12 +237,13 @@ class SimpleParser :: ParsingEngine (9416*8 , 6, ETH) {
 
         method update = {
             fields.sp = src_port,
-            fields.dp = dst_port
+            fields.dp = dst_port,
+            paxos_fields.dst_port = dst_port
         }
 
         method increment_offset = 64;
         method move_to_section =
-        if (dst_port == 34951)
+        if (dst_port == 34951 || dst_port == 34952)
             Paxos
         else
             done(SUCCESS);
@@ -208,8 +258,11 @@ class SimpleParser :: ParsingEngine (9416*8 , 6, ETH) {
             acceptor_id : 16,
             value : 32
         }
+        method update = {
+            paxos_fields.paxos_type = paxos_type
+        }
 
         method increment_offset = 128;
         method move_to_section = done(SUCCESS);
     } // Paxos
-} // SimpleParser
+} // PaxosParser
