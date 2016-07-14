@@ -7,7 +7,8 @@
 #define ETHERTYPE_IPV4 0x0800
 #define UDP_PROTOCOL 0x11
 #define ETHERTYPE_IPV6 0x86dd
-#define PAXOS_PROTOCOL 0x8888
+#define PAXOS_COORDINATOR 0x8888
+#define PAXOS_ACCEPTOR 0x8889
 
 parser start {
     return parse_ethernet;
@@ -44,9 +45,8 @@ parser parse_ipv6 {
 parser parse_udp {
     extract(udp);
     return select(udp.dstPort) {
-#if defined(PAXOS_ENABLE)
-        PAXOS_PROTOCOL: parse_paxos;
-#endif
+        PAXOS_COORDINATOR : parse_paxos;
+        PAXOS_ACCEPTOR : parse_paxos;
         default: ingress;
     }
 }
