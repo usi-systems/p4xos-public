@@ -112,5 +112,15 @@ field_list udp_checksum_list {
     payload;
 }
 
+header_type igmp_t {
+    fields {
+        msgtype : 8;
+        max_resp : 8;
+        checksum : 16;
+        grp_addr : 32;
+    }
+}
+
+header igmp_t igmp;
 
 #endif

@@ -1,8 +1,9 @@
+#define ENABLE_PAXOS 1
 #include "includes/headers.p4"
 #include "includes/parser.p4"
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
-
+#include "igmp.p4"
 
 register instance_register {
     width : INSTANCE_SIZE;
@@ -51,8 +52,10 @@ table sequence_tbl {
 
 
 control ingress {
-    if (valid(ipv4))
+    if (valid(ipv4)) {
         apply(forward_tbl);
+        apply(igmp_tbl);
+    }
     if (valid(paxos))
         apply(sequence_tbl);    
 }

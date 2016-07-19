@@ -1,7 +1,9 @@
+#define ENABLE_PAXOS 1
 #include "includes/headers.p4"
 #include "includes/parser.p4"
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
+#include "igmp.p4"
 
 #define PAXOS_1A 0 
 #define PAXOS_1B 1 
@@ -111,8 +113,10 @@ table drop_tbl {
 }
 
 control ingress {
-    if (valid(ipv4))
+    if (valid(ipv4)) {
         apply(forward_tbl);
+        apply(igmp_tbl);
+    }
 
     if (valid(paxos)) {
         apply(round_tbl);
