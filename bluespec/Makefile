@@ -15,5 +15,9 @@ test:
 	bsc -o test -e mkAcceptorTest mkAcceptorTest.v
 	./test
 
+multi:
+	bsc -u -verilog MultiPaxosTest.bsv
+	bsc -o multi -e mkMultiPaxosTest mkMultiPaxosTest.v
+	./multi
 clean:
-	rm -rf test sim *.v *.bo
+	rm -rf test sim multi *.v *.bo
