@@ -1,78 +1,93 @@
+import FIFO::*;
+import Vector::*;
+
+
+interface PaxosIndication;
+	method Action heard(Bit#(32) v);
+endinterface
+
+interface Paxos;
+	interface PaxosRequest request;
+endinterface
+
 typedef enum { IDLE, PHASE1A, PHASE1B, PHASE2A, PHASE2B, ACCEPT, VALUE_ERROR, FINISH } State deriving (Bits, Eq);
 
-interface PaxosIfc;
-	method ActionValue#(Tuple3#(State, Maybe#(int), Maybe#(Bit#(256)))) handle1A(int bal);
-	method ActionValue#(State) handle1B(int bal);
-	method ActionValue#(State) handle2A(int bal, Bit#(256) val);
-	method ActionValue#(State) handle2B(int bal, Bit#(256) val);
-endinterface: PaxosIfc
+interface PaxosRequest;
+	method Action handle1A(Bit#(32) bal);
+	method Action handle1B(Bit#(32) bal, Bit#(32) vbal, Bit#(32) val);
+	method Action handle2A(Bit#(32) bal, Bit#(32) val);
+	method Action handle2B(Bit#(32) bal, Bit#(32) val);
+endinterface
 
-(* synthesize *)
-module mkPaxos#(parameter int init_ballot, parameter int qsize)(PaxosIfc);
-	Reg#(int) ballot <- mkReg(init_ballot);
-	Reg#(int) quorum <- mkReg(qsize);
-	Reg#(int) vballot <- mkRegU;
-	Reg#(Bit#(256)) value <- mkRegU;
-	Reg#(int) count1b <- mkReg(0);
-	Reg#(int) count2b <- mkReg(0);
-	Reg#(int) uninitialized <- mkRegU;
+module mkPaxos#(PaxosIndication indication)(Paxos);
+	Reg#(Bit#(32)) ballot <- mkReg(0);
+	Reg#(Bit#(32)) quorum <- mkReg(2);
+	Reg#(Bit#(32)) vballot <- mkRegU;
+	Reg#(Maybe#(Bit#(32))) value <- mkReg(tagged Invalid);
+	Reg#(Bit#(32)) count1b <- mkReg(0);
+	Reg#(Bit#(32)) count2b <- mkReg(0);
+	Reg#(Bit#(32)) uninitialized <- mkRegU;
 
+	FIFO#(State) delay <- mkSizedFIFO(8);
 
-	method ActionValue#(Tuple3#(State, Maybe#(int), Maybe#(Bit#(256)))) handle1A(int bal);
-		State ret = IDLE;
-		Maybe#(int) vbal = tagged Invalid;
-		Maybe#(Bit#(256)) val = tagged Invalid;
-		if (bal >= ballot) begin
-			ballot <= bal;
-			if (vballot != uninitialized) begin
-				vbal = tagged Valid vballot;
-				val = tagged Valid value;
+	rule heard;
+		delay.deq;
+		let tmp = extend(pack(delay.first));
+		indication.heard(tmp);
+	endrule
+
+	interface PaxosRequest request;
+
+		method Action handle1A(Bit#(32) bal);
+			State ret = IDLE;
+			Maybe#(Bit#(32)) vbal = tagged Invalid;
+			Maybe#(Bit#(32)) val = tagged Invalid;
+			if (bal >= ballot) begin
+				ballot <= bal;
+				if (vballot != uninitialized) begin
+					vbal = tagged Valid vballot;
+					val = value;
+				end
+				else begin
+					vbal = tagged Invalid;
+				end
 			end
-			else begin
-				vbal = tagged Invalid;
-				val = tagged Invalid;
-			end
-		end
-		return tuple3(IDLE, vbal, val);
-	endmethod
+			delay.enq(ret);
+		endmethod
 
-	method ActionValue#(State) handle1B(int bal);
-		State ret = IDLE;
-		if (bal >= ballot) begin
-			ballot <= bal;
-			if (count1b == quorum - 1) begin
-				count1b <= count1b + 1;
-				ret = PHASE2A;
+		method Action handle1B(Bit#(32) bal, Bit#(32) vbal, Bit#(32) val);
+			State ret = IDLE;
+			if (bal >= ballot) begin
+				ballot <= bal;
+				if (count1b == quorum - 1) begin
+					count1b <= count1b + 1;
+					ret = PHASE2A;
+				end
+				else begin
+					count1b <= count1b + 1;
+				end
 			end
-			else begin
-				count1b <= count1b + 1;
-			end
-		end
-		return ret;
-	endmethod
+			delay.enq(ret);
+		endmethod
 
-	method ActionValue#(State) handle2A(int bal, Bit#(256) val);
-		State ret = IDLE;
-		if (bal >= ballot) begin
-			ballot <= bal;
-			vballot <= bal;
-			value <= val;
-			ret = ACCEPT;
-		end
-		return ret;
-	endmethod
-
-	method ActionValue#(State) handle2B(int bal, Bit#(256) val);
-		State ret = IDLE;
-		if (bal >= ballot) begin
-			if ((value != 'haaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
-				&& (value != val)) begin
-				ret = VALUE_ERROR;
-			end
-			else begin
+		method Action handle2A(Bit#(32) bal, Bit#(32) val);
+			State ret = IDLE;
+			if (bal >= ballot) begin
 				ballot <= bal;
 				vballot <= bal;
-				value <= val;
+				value <= tagged Valid val;
+				ret = ACCEPT;
+			end
+			delay.enq(ret);
+		endmethod
+
+		method Action handle2B(Bit#(32) bal, Bit#(32) val);
+			State ret = IDLE;
+			if (bal == ballot) begin
+				case(value) matches
+					tagged Invalid:	value <= tagged Valid val;
+					tagged Valid .v: if (v != val) ret = VALUE_ERROR;
+				endcase
 				if (count2b == quorum - 1) begin
 					count2b <= count2b + 1;
 					ret = FINISH;
@@ -81,7 +96,13 @@ module mkPaxos#(parameter int init_ballot, parameter int qsize)(PaxosIfc);
 					count2b <= count2b + 1;
 				end
 			end
-		end
-		return ret;
-	endmethod
+			else if (bal > ballot) begin
+				ballot <= bal;
+				value <= tagged Valid val;
+				count2b <= 1;
+			end
+			delay.enq(ret);
+		endmethod
+	endinterface
+
 endmodule: mkPaxos

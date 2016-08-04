@@ -1,23 +1,8 @@
-BSV_FILE=Tb.bsv
-INTERFACE=Tb
+CONNECTALDIR?=/opt/connectal
+S2H_INTERFACES = PaxosRequest:Paxos.request
+H2S_INTERFACES = Paxos:PaxosIndication
 
-all: compile convert run
+BSVFILES = Paxos.bsv
+CPPFILES = testpaxos.cpp
 
-compile:
-	bsc -u -verilog ${BSV_FILE}
-convert:
-	bsc -o sim -e mk${INTERFACE} mk${INTERFACE}.v
-run:
-	./sim
-
-test:
-	bsc -u -verilog AcceptorTest.bsv
-	bsc -o test -e mkAcceptorTest mkAcceptorTest.v
-	./test
-
-multi:
-	bsc -u -verilog MultiPaxosTest.bsv
-	bsc -o multi -e mkMultiPaxosTest mkMultiPaxosTest.v
-	./multi
-clean:
-	rm -rf test sim multi *.v *.bo
+include $(CONNECTALDIR)/Makefile.connectal
