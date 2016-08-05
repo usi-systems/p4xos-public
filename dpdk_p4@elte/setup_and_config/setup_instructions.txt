@@ -1,0 +1,85 @@
+#############################
+## SETUP INSTRUCTIONS FOR  ##
+## DPDK and P4@ELTE        ##
+## author: Pietro Bressana ##
+#############################
+
+*** INTRODUCTION: ***
+
+This step-by-step guide allows to install and configure both DPDK library
+and P4@ELTE compiler on a UBUNTU-based machine.
+
+The provided instructions have been tested on a SUPERMICRO server running
+UBUNTU 14.04 OS.
+
+Note that the script and the BIOS settings included into this folder need
+to be customized before being used.
+
+In order to install DPDK and P4@ELTE, only three of the provided files are
+necessary:
+
+- install_script.sh
+- supermicro_bios_settings.txt
+- supermicro_ram_memory_layout.pdf
+
+however, other files are provided:
+
+- supermicro_hw_specs.txt (hardware layout of tested server)
+- useful_commands.txt (commands to get informations about hardware)
+
+*** SETUP STEPS: ***
+
+1) Power off the server and change the ram memory layout as shown 
+in "supermicro_ram_memory_layout.pdf" file.
+Note that all the available memory (red triangles) have been moved
+to "cpu1/node0" slots, since our applications will be executed on
+this processor socket.
+
+2) Power on the server and enter BIOS configuration utility.
+Change BIOS settings as shown in "supermicro_bios_settings.txt" file.
+Save the changes and restart the machine.
+
+3) Copy "install_script.sh" file into your home folder and customize
+it to be coherent with the hardware layout of the server
+(check "supermicro_hw_specs.txt" file and use the commands provided
+in "useful_commands.txt" file).
+Run the script as root. When the setup has completed, reboot the machine. 
+
+4) Check the correctness of the setup by inspecting the setup folders and by
+typing the following commands (you need to be root):
+
+>>> lsmod | grep -i uio
+
+"uio" and "igb_uio" modules should be listed
+
+>>> cat /proc/meminfo | grep -i huge
+
+four hugepages (1GB each) should be reserved
+
+>>> cat /etc/mtab | grep -i huge
+
+a filesystem of type "hugetlbfs" should be mounted
+
+>>> echo $RTE_SDK
+
+the variable should point to dpdk install directory
+
+>>> ${RTE_SDK}/tools/dpdk_nic_bind.py
+
+two nics should be bound to "igb_uio" driver
+
+>>> ifconfig
+
+the two nics reserved for dpdk should not be listed.
+
+- You can also check "dpdk_conf.log" file in your home folder.
+
+- You can check processor cores isolation by installing "stress" application
+
+>>> sudo apt-get install stress
+
+and by running it on all the available cores:
+
+>>> stress -c 12
+
+all the available cores, except the two isolated processors, should be 100% busy.

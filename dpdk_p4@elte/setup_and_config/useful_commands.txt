@@ -1,0 +1,45 @@
+#############################################
+# 	          RAM MEMORY
+#############################################
+
+# MEMORY BLOCKS LAYOUT:
+dmidecode -t memory | grep Locator
+
+# MEMORY FREQUENCY:
+dmidecode -t memory | grep Speed
+
+# MEMORY SIZE:
+dmidecode -t memory | grep Size
+
+#############################################
+# 	          HUGEPAGES
+#############################################
+
+# MOUNT HUGEPAGES ON /mnt/huge_1GB MOUNTPOINT
+mount -t hugetlbfs nodev /mnt/huge_1GB
+
+# UNMOUNT HIGEPAGES MOUNTED ON MOUNTPOINT /mnt/huge_1GB
+umount /mnt/huge_1GB/
+
+# SHOW MOUNTED HUGETLBFSs
+cat /etc/mtab | grep -i huge
+
+#############################################
+#    Network Interface Card Requirements
+#############################################
+
+# DISPLAY PCI DEVICE SLOT FOR EACH PCI DEVICE
+lspci -vv
+
+# SHOW PCI LINK SPEED FOR PROVIDED SLOT
+lspci -s <SLOT> -vv | grep LnkSta
+
+#############################################
+#    AUTOMATIC CONFIGURATION SCRIPT
+#############################################
+
+# ENABLE AUTOMATIC EXECUTION AT STARTUP
+update-rc.d dpdk_conf start 99 2 .
+
+# DISABLE AUTOMATIC EXECUTION AT STARTUP
+update-rc.d -f dpdk_conf remove
