@@ -1,0 +1,79 @@
+****************************************************************
+***			                 CPUs
+****************************************************************
+
+NODE0: cores 0, 1, 2, 3, 4, 5 ==> cores 4 and 5 isolated
+
+NODE1: cores 6, 7, 8, 9, 10, 11
+
+****************************************************************
+***			              RAM MEMORY
+****************************************************************
+
+NODE0:
+	CHANNEL0:
+		- DIMM0:4GB (Speed: 2133 MHz / Configured Clock Speed: 1600 MHz)
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL1:
+		- DIMM0:4GB (Speed: 2133 MHz / Configured Clock Speed: 1600 MHz)
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL2:
+		- DIMM0:4GB (Speed: 2133 MHz / Configured Clock Speed: 1600 MHz)
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL3:
+		- DIMM0:4GB (Speed: 2133 MHz / Configured Clock Speed: 1600 MHz)
+		- DIMM1:empty
+		- DIMM2:empty
+NODE1:
+	CHANNEL0:
+		- DIMM0:empty
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL1:
+		- DIMM0:empty
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL2:
+		- DIMM0:empty
+		- DIMM1:empty
+		- DIMM2:empty
+	CHANNEL3:
+		- DIMM0:empty
+		- DIMM1:empty
+		- DIMM2:empty
+
+****************************************************************
+***			                PCIe BUS
+****************************************************************
+
+- PCIe 3.0 on server (8GT/s)
+- PCIe 2.0 on NIC (5GT/s)
+
+PCIe Bandwidth:
+
+- PCIe 1.x - 250MB/s per lane (16x == 16 lanes)
+- PCIe 2.0 - 500MB/s per lane (thus 16x PCIe 2.0 is 8GB/s)
+- PCIe 3.0 - 1 GB/s per lane
+
+==> PCIe 2.0 x8 = 500MB/s * 8 = 4GB/s
+
+Each direction:
+10Gb/s * 2 = 20Gb/s = 2.5GB/s
+
+Requirement on both directions:
+2 * 2.5GB/s = 5GB/s > PCIe 2.0 x8 bandwidth
+
+****************************************************************
+***			                NICs
+****************************************************************
+
+- 0c:c4:7a:a3:25:34 / 01:00.0 / eth18 --> node0  ==> reserved for DPDK
+
+- 0c:c4:7a:a3:25:35 / 01:00.1 / eth21 --> node0  ==> reserved for DPDK
+
+- 0c:c4:7a:ba:c0:08 / 82:00.0 / eth22 --> node1
+
+- 0c:c4:7a:ba:c0:09 / 82:00.1 / eth20 --> node1
