@@ -1,0 +1,33 @@
+#############################################
+#             SUPERMICRO BIOS Settings
+#############################################
+
++ "ADVANCED" tab
+
+	>> "CPU CONFIGURATION"
+
+		* INTEL VIRTUALIZATION TECHNOLOGY [DISABLE]
+
+		* ADVANCED POWER MANAGEMENT CONFIGURATION
+
+			=> POWER TECHNOLOGY [DISABLE]
+			
+			=> ENERGY PERFORMANCE TUNING [DISABLE]
+			
+			=> ENERGY PERFORMANCE BIAS SETTING [PERFORMANCE]
+			
+			=> ENERGY EFFICIENT TURBO [DISABLE]
+
+	>> "CHIPSET CONFIGURATION"
+
+		* NORTH BRIDGE
+
+			=> IIO CONFIGURATION
+			
+				-> INTEL VT FOR DIRECTED I/O (VT-d) [ENABLE]
+
+			=> MEMORY CONFIGURATION
+
+				-> MEMORY FREQUENCY [2133]
+
+#############################################
