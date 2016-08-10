@@ -8,20 +8,23 @@ import datetime
 
 class Paxos(Packet):
     name ="PaxosPacket "
-    fields_desc =[  XIntField("inst", 0x1),
+    fields_desc = [  
+                    XShortField("msgtype", 0x3),
+                    XIntField("inst", 0x1),
                     XShortField("rnd", 0x1),
                     XShortField("vrnd", 0x0),
                     XShortField("acpt", 0x0),
-                    XShortField("msgtype", 0x3) ]
+                    XBitField("value", 0x11223344, 32)
+                ]
+
+bind_layers(UDP, Paxos, dport=0x8888)
+
 
 def handle(x):
     x.show()
-    pax = Paxos(x['Raw'].load)
-
-    pax.show()
 
 def server(args):
-    sniff(iface = args.interface, filter= 'dst %s and udp' % args.address, prn = lambda x: handle(x))
+    sniff(iface = args.interface, filter= 'udp', prn = lambda x: handle(x))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')

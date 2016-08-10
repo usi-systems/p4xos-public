@@ -4,28 +4,26 @@ from scapy.all import *
 import sys
 import argparse
 
-class PaxosValue(Packet):
-    name ="PaxosValue "
-    fields_desc =[
-                    XBitField("value", 0x11223344, 256)
-                ]
 
 class Paxos(Packet):
     name ="PaxosPacket "
     fields_desc =[
+                    XShortField("msgtype", 0x3),
                     XIntField("inst", 0x1),
                     XShortField("rnd", 0x1),
                     XShortField("vrnd", 0x0),
                     XShortField("acpt", 0x0),
-                    XShortField("msgtype", 0x3),
+                    XBitField("value", 0x11223344, 32)
                 ]
 
+bind_layers(UDP, Paxos, dport=0x8888)
 
-def paxos_packet(inst, rnd, vrnd, acpt, typ, value):
+
+def paxos_packet(inst, rnd, vrnd, acpt, typ, val):
     eth = Ether(dst="08:00:27:10:a8:80")
     ip = IP(src="192.168.4.95", dst="224.3.29.73")
     udp = UDP(sport=34951, dport=0x8888)
-    pkt = eth / ip / udp / Paxos(inst=inst, rnd=rnd, vrnd=vrnd, acpt=acpt, msgtype=typ) / fuzz(PaxosValue())
+    pkt = eth / ip / udp / Paxos(inst=inst, rnd=rnd, vrnd=vrnd, acpt=acpt, msgtype=typ, value=val)
     return pkt
 
 
@@ -36,7 +34,8 @@ if __name__=='__main__':
     parser.add_argument('-i', '--inst', help='Paxos instance', type=int, default=0)
     parser.add_argument('-t', '--type', help='Paxos type', type=int, default=3)
     parser.add_argument('-r', '--rnd', help='Paxos round', type=int, default=1)
-    parser.add_argument('-v', '--vrnd', help='Paxos value round', type=int, default=0)
+    parser.add_argument('-d', '--vrnd', help='Paxos value round', type=int, default=0)
+    parser.add_argument('-v', '--value', help='Paxos value', default=0x11223344)
     parser.add_argument('-a', '--acpt', help='Paxos acceptor id', type=int, default=0)
     parser.add_argument('-c', '--count', help='send multiple packets', type=int, default=1)
     parser.add_argument('-o', '--output', help='output pcap file', type=str)
