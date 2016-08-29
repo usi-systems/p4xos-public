@@ -1,0 +1,73 @@
+
+#############################################
+###		P4@ELTE APP PARAMETERS
+#############################################
+
+# Core mask (core #5):
+-c #
+
+  |    |
+  V    V
+-|6|--|5|--|4|--|3|--|2|--|1|
+-{5}--{4}--{3}--{2}--{1}--{0}
+--0----1----0----0----0----0- ==> 0x1
+--1----0----0----0----0----0- ==> 0x2
+--1----1----0----0----0----0- ==> 0x3
+
+core 5 & 6: 0x30
+
+# Number of memory channels per processor socket
+-n 4
+
+# Hexadecimal bitmask of the ports to configure
+-p #
+
+            |    |
+            V    V
+|20|-|22|-|21|-|18|
+{09}-{08}-{35}-{34}
+--0----0----0----1- ==> 0x1
+--0----0----1----0- ==> 0x2
+--0----1----0----0- ==> 0x4
+--1----0----0----0- ==> 0x8
+--1----1----1----1- ==> 0xf
+--0----0----1----1- ==> 0x3
+
+port 18 & 21: 0x3
+
+# SET PORTS TO PROMISCUOUS MODE
+-P
+
+# LAUNCH l2_switch_test EXAMPLE
+
+./run.sh ./build/l2_switch_test/build/l2_switch_test -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(0,1,4),(0,2,4),(1,0,5),(1,1,5),(1,2,5)\""
+
+./run.sh ./build/l2_switch_test/build/l2_switch_test -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(1,0,5)\""
+
+*************************
+
+# LAUNCH l3_routing_test EXAMPLE
+
+./run.sh ./build/l3_routing_test/build/l3_routing_test -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(0,1,4),(0,2,4),(1,0,5),(1,1,5),(1,2,5)\""
+
+./run.sh ./build/l3_routing_test/build/l3_routing_test -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(1,0,5)\""
+
+**************************************************
+***				LAUNCH PAXOS CODE
+**************************************************
+
+>>> ACCEPTOR:
+
+P4_GCC_OPTS="-O0 -DP4DPDK_DEBUG" ./run.sh ./build/acceptor/build/acceptor netpaxos_controller -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(1,0,5)\""
+
+>>> COORDINATOR:
+
+P4_GCC_OPTS="-O0 -DP4DPDK_DEBUG" ./run.sh ./build/coordinator/build/coordinator netpaxos_controller -- -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(1,0,5)\""
+
+>>> TEST_PACKETS:
+
+./paxos_test.py eth20 -c 10
+
+gdb --args ./build/acceptor/build/acceptor -c 0x30 -n 4 -- -P -p 0x3 --config "\"(0,0,4),(1,0,5)\""
+
+export P4DPDK_OPTS="-c 0x30 -n 4 - --log-level 3 -- -p 0x3 --config \"(0,0,4),(1,0,5)\""
