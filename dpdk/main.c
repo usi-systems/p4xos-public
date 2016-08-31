@@ -97,7 +97,7 @@ parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 	}
 }
 
-/*
+
 static void
 print_paxos_hdr(struct paxos_hdr *p)
 {
@@ -108,10 +108,9 @@ print_paxos_hdr(struct paxos_hdr *p)
 		rte_be_to_cpu_16(p->vrnd),
 		rte_be_to_cpu_16(p->acptid));
 }
-*/
 
 static int
-paxos_rx_process(struct rte_mbuf *pkt)
+paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 {
 	int ret = 0;
 	uint8_t l4_proto = 0;
@@ -136,12 +135,21 @@ paxos_rx_process(struct rte_mbuf *pkt)
 	paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + sizeof(struct udp_hdr));
 
 	//rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
-	//rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
-	//print_paxos_hdr(paxos_hdr);
+	rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
+	print_paxos_hdr(paxos_hdr);
 
-	if (paxos_hdr->msgtype > 100)
-		return -1;
+	struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
+	struct paxos_accepted ack = {
+			.iid = rte_be_to_cpu_32(paxos_hdr->inst),
+			.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
+			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
+			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
+			.value = *v };
 
+	struct paxos_accepted out;
+	learner_receive_accepted(l, &ack);
+	int consensus = learner_deliver_next(l, &out);
+	printf("consensus reached: %d\n", consensus);
 
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
 		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
@@ -156,15 +164,18 @@ paxos_rx_process(struct rte_mbuf *pkt)
 static uint16_t
 add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 		struct rte_mbuf **pkts, uint16_t nb_pkts,
-		uint16_t max_pkts __rte_unused, void *_ __rte_unused)
+		uint16_t max_pkts __rte_unused, void *user_param)
 {
+	struct learner* learner = (struct learner *)user_param;
 	unsigned i;
 	uint64_t now = rte_rdtsc();
 
 	for (i = 0; i < nb_pkts; i++) {
 		pkts[i]->udata64 = now;
-		paxos_rx_process(pkts[i]);
+		paxos_rx_process(pkts[i], learner);
 	}
+
+
 	return nb_pkts;
 }
 
@@ -238,7 +249,12 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
 	rte_eth_promiscuous_enable(port);
-	rte_eth_add_rx_callback(port, 0, add_timestamps, NULL);
+
+	//initialize learner
+	struct learner *learner = learner_new(NUM_ACCEPTORS);
+	learner_set_instance_id(learner, -1);
+
+	rte_eth_add_rx_callback(port, 0, add_timestamps, learner);
 	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
 	return 0;
 }
@@ -259,30 +275,6 @@ lcore_main(void)
 	printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
 			rte_lcore_id());
 
-	int ret;
-	struct learner *l = learner_new(NUM_ACCEPTORS);
-	learner_set_instance_id(l, -1);
-
-	const char c[] = "abcdef";
-	struct paxos_value *v = paxos_value_new(c, sizeof(c));
-	struct paxos_accepted ack0 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 0, .value = *v };
-	struct paxos_accepted ack1 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 1, .value = *v };
-	struct paxos_accepted ack2 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 2, .value = *v };
-
-	struct paxos_accepted out;
-	learner_receive_accepted(l, &ack0);
-	ret = learner_deliver_next(l, &out);
-	printf("Learner returns %d\n", ret);
-
-	learner_receive_accepted(l, &ack1);
-	ret = learner_deliver_next(l, &out);
-	printf("Learner returns %d\n", ret);
-
-	learner_receive_accepted(l, &ack2);
-	ret = learner_deliver_next(l, &out);
-	printf("Learner returns %d\n", ret);
-
-	learner_free(l);
 
 	for (;;) {
 		for (port = 0; port < nb_ports; port++) {
