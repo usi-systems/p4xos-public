@@ -6,6 +6,7 @@
 #include <rte_eal.h>
 #include <rte_ethdev.h>
 #include <rte_cycles.h>
+/* get cores */
 #include <rte_lcore.h>
 #include <rte_mbuf.h>
 
@@ -22,6 +23,10 @@
 #include "learner.h"
 /* logging */
 #include <rte_log.h>
+/* timer event */
+#include <rte_timer.h>
+/* get clock cycles */
+#include <rte_cycles.h>
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -34,9 +39,15 @@
 
 #define NUM_ACCEPTORS 3
 
+#define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
+
+
 volatile bool force_quit;
 
 static unsigned nb_ports;
+
+/* learner timer for deliver */
+static struct rte_timer timer0;
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -154,10 +165,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
 
-	struct paxos_accepted out;
 	learner_receive_accepted(l, &ack);
-	int consensus = learner_deliver_next(l, &out);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
 
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
 		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
@@ -316,12 +324,54 @@ lcore_main(void)
 	}
 }
 
+
+static void
+check_deliver(struct rte_timer *tim,
+		void *arg)
+{
+	struct learner* l = (struct learner *) arg;
+	static unsigned counter = 0;
+	unsigned lcore_id = rte_lcore_id();
+
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
+
+	struct paxos_accepted out;
+	int consensus = learner_deliver_next(l, &out);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
+	/* this timer is automatically reloaded until we decide to
+	 * stop it, when counter reaches 20. */
+	if ((counter++) == 20)
+		rte_timer_stop(tim);
+}
+
+
+static __attribute__((noreturn)) int
+lcore_mainloop(__attribute__((unused)) void *arg)
+{
+	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
+	unsigned lcore_id;
+
+	lcore_id = rte_lcore_id();
+
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
+			"Starting mainloop on core %u\n", lcore_id);
+
+	while(1) {
+		cur_tsc = rte_rdtsc();
+		diff_tsc = cur_tsc - prev_tsc;
+		if (diff_tsc > TIMER_RESOLUTION_CYCLES) {
+			rte_timer_manage();
+			prev_tsc = cur_tsc;
+		}
+	}
+}
+
 int
 main(int argc, char *argv[])
 {
 	struct rte_mempool *mbuf_pool;
 	uint8_t portid = 0;
-
+	unsigned master_core, lcore_id;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;
@@ -349,14 +399,30 @@ main(int argc, char *argv[])
 	struct learner *learner = learner_new(NUM_ACCEPTORS);
 	learner_set_instance_id(learner, -1);
 
+	/* init RTE timer library */
+	rte_timer_subsystem_init();
+
+	/* init timer structure */
+	rte_timer_init(&timer0);
+
+	/* load timer0, every second, on a slave lcore, reloaded automatically */
+	uint64_t hz = rte_get_timer_hz();
+	/* master core */
+	master_core = rte_lcore_id();
+	/* slave core */
+	lcore_id = rte_get_next_lcore(master_core, 0, 1);
+	rte_timer_reset(&timer0, hz, PERIODICAL, lcore_id, check_deliver, learner);
+
+
 	for (portid = 0; portid < nb_ports; portid++)
 		if (port_init(portid, mbuf_pool, learner) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
 
-	if (rte_lcore_count() > 1)
-		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL, "\nWARNING: Too much enabled lcores -"
-			"App use only 1 lcore\n");
+	/* start mainloop on every lcore */
+	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+		rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
+	}
 
 	lcore_main();
 
