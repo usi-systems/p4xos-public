@@ -13,14 +13,15 @@
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
-
+/* dump packet contents */
 #include <rte_hexdump.h>
-
 #include <rte_malloc.h>
-
+/* paxos header definition */
 #include "rte_paxos.h"
-
+/* libpaxos learner */
 #include "learner.h"
+/* logging */
+#include <rte_log.h>
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -102,18 +103,17 @@ parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 	}
 }
 
-/*
 static void
 print_paxos_hdr(struct paxos_hdr *p)
 {
-	printf("{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u\n",
+	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+		"{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u\n",
 		rte_be_to_cpu_16(p->msgtype),
 		rte_be_to_cpu_32(p->inst),
 		rte_be_to_cpu_16(p->rnd),
 		rte_be_to_cpu_16(p->vrnd),
 		rte_be_to_cpu_16(p->acptid));
 }
-*/
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
@@ -140,9 +140,11 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 
 	paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + sizeof(struct udp_hdr));
 
-	//rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
-	//rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
-	//print_paxos_hdr(paxos_hdr);
+	if (rte_get_log_level() == RTE_LOG_DEBUG) {
+		rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
+		rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
+		print_paxos_hdr(paxos_hdr);
+	}
 
 	struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
 	struct paxos_accepted ack = {
@@ -155,7 +157,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 	struct paxos_accepted out;
 	learner_receive_accepted(l, &ack);
 	int consensus = learner_deliver_next(l, &out);
-	printf("consensus reached: %d\n", consensus);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
 
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
 		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
@@ -196,7 +198,8 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		cycles += now - pkts[i]->udata64;
-		printf("Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
 				latency_numbers.total_pkts, cycles);
 	}
 
@@ -204,7 +207,8 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 	latency_numbers.total_pkts += nb_pkts;
 
 	if (latency_numbers.total_pkts > (100 * 1000 * 1000ULL)) {
-		printf("Latency = %"PRIu64" cycles\n",
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+		"Latency = %"PRIu64" cycles\n",
 		latency_numbers.total_cycles / latency_numbers.total_pkts);
 		latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
 	}
@@ -265,7 +269,8 @@ static void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
-		printf("\n\nSignal %d received, preparing to exit...\n", signum);
+		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
+				"\n\nSignal %d received, preparing to exit...\n", signum);
 		force_quit = true;
 	}
 }
@@ -280,11 +285,12 @@ lcore_main(void)
 		if (rte_eth_dev_socket_id(port) > 0 &&
 				rte_eth_dev_socket_id(port) !=
 					(int) rte_socket_id())
-			printf("WARNING, port %u is on retmote NUMA node to "
+			rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
+					"WARNING, port %u is on retmote NUMA node to "
 					"polling thread.\nPerformance will "
 					"not be optimal.\n", port);
 
-	printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
+	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. [Ctrl+C to quit]\n",
 			rte_lcore_id());
 
 
@@ -326,6 +332,8 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+	rte_set_log_level(RTE_LOG_DEBUG);
+
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports < 2 || (nb_ports & 1))
 		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
@@ -347,12 +355,12 @@ main(int argc, char *argv[])
 
 
 	if (rte_lcore_count() > 1)
-		printf("\nWARNING: Too much enabled lcores -"
+		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL, "\nWARNING: Too much enabled lcores -"
 			"App use only 1 lcore\n");
 
 	lcore_main();
 
-	printf("free learner\n");
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "free learner\n");
 	learner_free(learner);
 	return 0;
 }
