@@ -1,5 +1,8 @@
 #include <stdint.h>
 #include <inttypes.h>
+#include <signal.h>
+#include <stdbool.h>
+
 #include <rte_eal.h>
 #include <rte_ethdev.h>
 #include <rte_cycles.h>
@@ -29,6 +32,8 @@
 #define DEFAULT_PAXOS_PORT 34952
 
 #define NUM_ACCEPTORS 3
+
+volatile bool force_quit;
 
 static unsigned nb_ports;
 
@@ -97,7 +102,7 @@ parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 	}
 }
 
-
+/*
 static void
 print_paxos_hdr(struct paxos_hdr *p)
 {
@@ -108,6 +113,7 @@ print_paxos_hdr(struct paxos_hdr *p)
 		rte_be_to_cpu_16(p->vrnd),
 		rte_be_to_cpu_16(p->acptid));
 }
+*/
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
@@ -135,8 +141,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 	paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + sizeof(struct udp_hdr));
 
 	//rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
-	rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
-	print_paxos_hdr(paxos_hdr);
+	//rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
+	//print_paxos_hdr(paxos_hdr);
 
 	struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
 	struct paxos_accepted ack = {
@@ -207,7 +213,7 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 };
 
 static inline int
-port_init(uint8_t port, struct rte_mempool *mbuf_pool)
+port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct learner* learner)
 {
 	struct rte_eth_conf port_conf = port_conf_default;
 	const uint16_t rx_rings = 1, tx_rings = 1;
@@ -250,16 +256,22 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 
 	rte_eth_promiscuous_enable(port);
 
-	//initialize learner
-	struct learner *learner = learner_new(NUM_ACCEPTORS);
-	learner_set_instance_id(learner, -1);
-
 	rte_eth_add_rx_callback(port, 0, add_timestamps, learner);
 	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
 	return 0;
 }
 
-static __attribute__((noreturn)) void
+static void
+signal_handler(int signum)
+{
+	if (signum == SIGINT || signum == SIGTERM) {
+		printf("\n\nSignal %d received, preparing to exit...\n", signum);
+		force_quit = true;
+	}
+}
+
+
+static void
 lcore_main(void)
 {
 	uint8_t port;
@@ -277,6 +289,10 @@ lcore_main(void)
 
 
 	for (;;) {
+		// Check if signal is received
+		if (force_quit)
+			break;
+
 		for (port = 0; port < nb_ports; port++) {
 			struct rte_mbuf *bufs[BURST_SIZE];
 			const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
@@ -292,7 +308,6 @@ lcore_main(void)
 			}
 		}
 	}
-
 }
 
 int
@@ -300,6 +315,10 @@ main(int argc, char *argv[])
 {
 	struct rte_mempool *mbuf_pool;
 	uint8_t portid = 0;
+
+	signal(SIGTERM, signal_handler);
+	signal(SIGINT, signal_handler);
+	force_quit = false;
 
 	/* init EAL */
 	int ret = rte_eal_init(argc, argv);
@@ -318,8 +337,12 @@ main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
+	//initialize learner
+	struct learner *learner = learner_new(NUM_ACCEPTORS);
+	learner_set_instance_id(learner, -1);
+
 	for (portid = 0; portid < nb_ports; portid++)
-		if (port_init(portid, mbuf_pool) != 0)
+		if (port_init(portid, mbuf_pool, learner) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
 
@@ -329,6 +352,8 @@ main(int argc, char *argv[])
 
 	lcore_main();
 
+	printf("free learner\n");
+	learner_free(learner);
 	return 0;
 }
 
