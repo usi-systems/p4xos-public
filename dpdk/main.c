@@ -13,7 +13,11 @@
 
 #include <rte_hexdump.h>
 
-#include "paxos.h"
+#include <rte_malloc.h>
+
+#include "rte_paxos.h"
+
+#include "learner.h"
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -23,6 +27,8 @@
 #define TX_RING_SIZE 512
 
 #define DEFAULT_PAXOS_PORT 34952
+
+#define NUM_ACCEPTORS 3
 
 static unsigned nb_ports;
 
@@ -132,13 +138,13 @@ paxos_rx_process(struct rte_mbuf *pkt)
 	//rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
 	//rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
 	//print_paxos_hdr(paxos_hdr);
-	
+
 	if (paxos_hdr->msgtype > 100)
 		return -1;
 
 
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
-		+ sizeof(struct udp_hdr);
+		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
 
 	rte_pktmbuf_adj(pkt, outer_header_len);
 
@@ -230,7 +236,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			addr.addr_bytes[0], addr.addr_bytes[1],
 			addr.addr_bytes[2], addr.addr_bytes[3],
 			addr.addr_bytes[4], addr.addr_bytes[5]);
-	
+
 	rte_eth_promiscuous_enable(port);
 	rte_eth_add_rx_callback(port, 0, add_timestamps, NULL);
 	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
@@ -241,6 +247,7 @@ static __attribute__((noreturn)) void
 lcore_main(void)
 {
 	uint8_t port;
+
 	for (port = 0; port < nb_ports; port++)
 		if (rte_eth_dev_socket_id(port) > 0 &&
 				rte_eth_dev_socket_id(port) !=
@@ -251,6 +258,31 @@ lcore_main(void)
 
 	printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
 			rte_lcore_id());
+
+	int ret;
+	struct learner *l = learner_new(NUM_ACCEPTORS);
+	learner_set_instance_id(l, -1);
+
+	const char c[] = "abcdef";
+	struct paxos_value *v = paxos_value_new(c, sizeof(c));
+	struct paxos_accepted ack0 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 0, .value = *v };
+	struct paxos_accepted ack1 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 1, .value = *v };
+	struct paxos_accepted ack2 = { .iid = 0, .ballot = 1, .value_ballot = 1, .aid = 2, .value = *v };
+
+	struct paxos_accepted out;
+	learner_receive_accepted(l, &ack0);
+	ret = learner_deliver_next(l, &out);
+	printf("Learner returns %d\n", ret);
+
+	learner_receive_accepted(l, &ack1);
+	ret = learner_deliver_next(l, &out);
+	printf("Learner returns %d\n", ret);
+
+	learner_receive_accepted(l, &ack2);
+	ret = learner_deliver_next(l, &out);
+	printf("Learner returns %d\n", ret);
+
+	learner_free(l);
 
 	for (;;) {
 		for (port = 0; port < nb_ports; port++) {
@@ -268,6 +300,7 @@ lcore_main(void)
 			}
 		}
 	}
+
 }
 
 int
@@ -291,7 +324,7 @@ main(int argc, char *argv[])
 			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
 	if (mbuf_pool == NULL)
-		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid); 
+		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
 	for (portid = 0; portid < nb_ports; portid++)
 		if (port_init(portid, mbuf_pool) != 0)

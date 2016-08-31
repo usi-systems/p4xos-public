@@ -1,5 +1,5 @@
-#ifndef _PAXOS_H_
-#define _PAXOS_H_
+#ifndef _RTE_PAXOS_H_
+#define _RTE_PAXOS_H_
 
 #include <stdint.h>
 

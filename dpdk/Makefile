@@ -46,12 +46,17 @@ SRCS-y := main.c
 
 CFLAGS += $(WERROR_FLAGS)
 
+# Link libpaxos
+CFLAGS += -I$(PWD)/include
+LDFLAGS += -L$(PWD)/lib
+LDLIBS += -lpaxos
+
 # workaround for a gcc bug with noreturn attribute
 # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
 ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
 CFLAGS_main.o += -Wno-return-type
 endif
 
-EXTRA_CFLAGS += -O3 -g -Wfatal-errors
+EXTRA_CFLAGS += -O3 -g -Wfatal-errors -Wno-missing-braces
 
 include $(RTE_SDK)/mk/rte.extapp.mk
