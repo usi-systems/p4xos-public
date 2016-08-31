@@ -17,24 +17,24 @@ public:
 	PaxosIndication(unsigned int id) : PaxosIndicationWrapper(id) {}
 };
 
-static void send1Amessage(uint32_t v)
+static void send1Amessage(uint16_t v)
 {
 	printf("[%s:%d] %d\n", __FUNCTION__, __LINE__, v);
 	echoRequestProxy->handle1A(v);
 	sem_wait(&mutex);
 }
 
-static void send1Bmessage(uint32_t b, uint32_t vb, uint32_t v)
+static void send1Bmessage(uint16_t b, uint16_t vb, uint32_t v, uint16_t a)
 {
 	printf("[%s:%d] %d\n", __FUNCTION__, __LINE__, b);
-	echoRequestProxy->handle1B(b, vb, v);
+	echoRequestProxy->handle1B(b, vb, v, a);
 	sem_wait(&mutex);
 }
 
-static void send2Bmessage(uint32_t b, uint32_t v)
+static void send2Bmessage(uint16_t b, uint32_t v, uint16_t a)
 {
 	printf("[%s:%d] %d\n", __FUNCTION__, __LINE__, b);
-	echoRequestProxy->handle2B(b, v);
+	echoRequestProxy->handle2B(b, v, a);
 	sem_wait(&mutex);
 }
 
@@ -55,10 +55,11 @@ int main(int argc, char *argv[])
 
 	uint32_t ballot  = 1;
 	send1Amessage(ballot);
-	send1Bmessage(ballot, 0, 0);
-	send1Bmessage(ballot, 0, 0);
-	send2Bmessage(ballot, 42);
-	send2Bmessage(ballot, 42);
+	send1Bmessage(ballot, 0, 0, 1);
+	send1Bmessage(ballot, 0, 0, 2);
+	send2Bmessage(ballot, 42, 0);
+	send2Bmessage(ballot, 42, 0);
+	send2Bmessage(ballot, 42, 1);
 
 	return 0;
 }
