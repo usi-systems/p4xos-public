@@ -28,8 +28,11 @@
 /* get clock cycles */
 #include <rte_cycles.h>
 
-#define NUM_MBUFS 8191
+/* number of elements in the mbuf pool */
+#define NUM_MBUFS 255
+/* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
+/* Maximum number of packets in sending or receiving */
 #define BURST_SIZE 32
 
 #define RX_RING_SIZE 128
@@ -56,6 +59,11 @@ static const struct rte_eth_conf port_conf_default = {
 };
 
 
+static const struct ether_addr ether_multicast = {
+	.addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
+};
+
+
 static struct {
 	uint64_t total_cycles;
 	uint64_t total_pkts;
@@ -73,6 +81,8 @@ union tunnel_offload_info {
 		uint64_t outer_l3_len:16; /**< outer L3 Header Length */
 	};
 } __rte_cache_aligned;
+
+struct rte_mempool *mbuf_pool;
 
 /**
  * Parse an ethernet header to fill the ethertype, outer_l2_len, outer_l3_len and
@@ -346,6 +356,43 @@ check_deliver(struct rte_timer *tim,
 }
 
 
+/* TODO: parameterized ether, ip, udp headers */
+static void
+send_repeat_message(paxos_message *pm) {
+	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
+	size_t pkt_size = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
+		sizeof(struct udp_hdr) + sizeof(paxos_message);
+	created_pkt->data_len = pkt_size;
+	created_pkt->pkt_len = pkt_size;
+	struct ether_hdr *eth;
+	eth = rte_pktmbuf_mtod(created_pkt, struct ether_hdr*);
+	/* set packet s_addr using mac address of port 1 */
+	uint8_t port_id = 1;
+	rte_eth_macaddr_get(port_id, &eth->s_addr);
+	/* Set multicast address 01-1b-19-00-00-00 */
+	ether_addr_copy(&ether_multicast, &eth->d_addr);
+	eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+	struct ipv4_hdr *iph;
+	iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(created_pkt, struct ipv4_hdr*, sizeof(struct ether_hdr));
+	iph->src_addr = rte_cpu_to_be_32(IPv4(192,168, 4, 95));
+	iph->dst_addr = rte_cpu_to_be_32(IPv4(239, 3, 29, 73));
+	iph->version_ihl = 0x45;
+	iph->hdr_checksum = 0;
+	iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) + sizeof(struct udp_hdr) + sizeof(paxos_message));
+	iph->next_proto_id = IPPROTO_UDP;
+	struct udp_hdr *udp;
+	udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
+	udp->src_port = rte_cpu_to_be_16(34951);
+	udp->dst_port = rte_cpu_to_be_16(34952);
+	udp->dgram_cksum = 0;
+	udp->dgram_len = rte_cpu_to_be_16(sizeof(paxos_message));
+	paxos_message *px = (struct paxos_message *)((unsigned char*)udp + sizeof(struct udp_hdr));
+	rte_memcpy(px, pm, sizeof(*pm));	
+	const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
+	rte_pktmbuf_free(created_pkt);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d repeated messages\n", nb_tx);
+}
+
 static void
 check_holes(struct rte_timer *tim, void *arg)
 {
@@ -365,7 +412,9 @@ check_holes(struct rte_timer *tim, void *arg)
 			.type = PAXOS_REPEAT,
 			.u.repeat = repeat,
 		};
+		send_repeat_message(&repeat_msg);
 	}
+
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
@@ -395,7 +444,6 @@ lcore_mainloop(__attribute__((unused)) void *arg)
 int
 main(int argc, char *argv[])
 {
-	struct rte_mempool *mbuf_pool;
 	uint8_t portid = 0;
 	unsigned master_core, lcore_id;
 	signal(SIGTERM, signal_handler);
