@@ -355,38 +355,49 @@ check_deliver(struct rte_timer *tim,
 		rte_timer_stop(tim);
 }
 
-
-/* TODO: parameterized ether, ip, udp headers */
 static void
-send_repeat_message(paxos_message *pm) {
-	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
+craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
+		uint16_t sport, uint16_t dport, size_t data_size, uint8_t output_port)
+{
 	size_t pkt_size = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
-		sizeof(struct udp_hdr) + sizeof(paxos_message);
-	created_pkt->data_len = pkt_size;
-	created_pkt->pkt_len = pkt_size;
+		sizeof(struct udp_hdr) + data_size;
+	(*created_pkt)->data_len = pkt_size;
+	(*created_pkt)->pkt_len = pkt_size;
 	struct ether_hdr *eth;
-	eth = rte_pktmbuf_mtod(created_pkt, struct ether_hdr*);
-	/* set packet s_addr using mac address of port 1 */
-	uint8_t port_id = 1;
-	rte_eth_macaddr_get(port_id, &eth->s_addr);
+	eth = rte_pktmbuf_mtod(*created_pkt, struct ether_hdr*);
+	/* set packet s_addr using mac address of output port */
+	rte_eth_macaddr_get(output_port, &eth->s_addr);
 	/* Set multicast address 01-1b-19-00-00-00 */
 	ether_addr_copy(&ether_multicast, &eth->d_addr);
 	eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 	struct ipv4_hdr *iph;
-	iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(created_pkt, struct ipv4_hdr*, sizeof(struct ether_hdr));
-	iph->src_addr = rte_cpu_to_be_32(IPv4(192,168, 4, 95));
-	iph->dst_addr = rte_cpu_to_be_32(IPv4(239, 3, 29, 73));
+	iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(*created_pkt, struct ipv4_hdr*,
+			sizeof(struct ether_hdr));
+	iph->src_addr = rte_cpu_to_be_32(srcIP);
+	iph->dst_addr = rte_cpu_to_be_32(dstIP);
 	iph->version_ihl = 0x45;
 	iph->hdr_checksum = 0;
-	iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) + sizeof(struct udp_hdr) + sizeof(paxos_message));
+	iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) +
+			sizeof(struct udp_hdr) + sizeof(paxos_message));
 	iph->next_proto_id = IPPROTO_UDP;
 	struct udp_hdr *udp;
 	udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
-	udp->src_port = rte_cpu_to_be_16(34951);
-	udp->dst_port = rte_cpu_to_be_16(34952);
+	udp->src_port = rte_cpu_to_be_16(sport);
+	udp->dst_port = rte_cpu_to_be_16(dport);
 	udp->dgram_cksum = 0;
-	udp->dgram_len = rte_cpu_to_be_16(sizeof(paxos_message));
-	paxos_message *px = (struct paxos_message *)((unsigned char*)udp + sizeof(struct udp_hdr));
+	udp->dgram_len = rte_cpu_to_be_16(data_size);
+}
+
+static void
+send_repeat_message(paxos_message *pm) {
+	uint8_t port_id = 1;
+	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
+	craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
+			34951, 34952, sizeof(paxos_message), port_id);
+	size_t paxos_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
+				sizeof(struct udp_hdr);
+	paxos_message *px = rte_pktmbuf_mtod_offset(created_pkt, struct paxos_message *,
+				paxos_offset);
 	rte_memcpy(px, pm, sizeof(*pm));	
 	const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
 	rte_pktmbuf_free(created_pkt);
