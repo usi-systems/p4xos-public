@@ -41,13 +41,15 @@
 
 #define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
 
+#define BUFSIZE 1500
 
 volatile bool force_quit;
 
 static unsigned nb_ports;
 
 /* learner timer for deliver */
-static struct rte_timer timer0;
+static struct rte_timer deliver_timer;
+static struct rte_timer hole_timer;
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -330,20 +332,44 @@ check_deliver(struct rte_timer *tim,
 		void *arg)
 {
 	struct learner* l = (struct learner *) arg;
-	static unsigned counter = 0;
 	unsigned lcore_id = rte_lcore_id();
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
 
 	struct paxos_accepted out;
 	int consensus = learner_deliver_next(l, &out);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
-	/* this timer is automatically reloaded until we decide to
-	 * stop it, when counter reaches 20. */
-	if ((counter++) == 20)
+	if (consensus)
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
+	/* this timer is automatically reloaded until we decide to stop it */
+	if (force_quit)
 		rte_timer_stop(tim);
 }
 
+
+static void
+check_holes(struct rte_timer *tim, void *arg)
+{
+	struct learner *l = (struct learner *) arg;
+	unsigned lcore_id = rte_lcore_id();
+
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
+
+	paxos_repeat repeat;
+	unsigned chunks = 10;
+	if (learner_has_holes(l, &repeat.from, &repeat.to)) {
+		if ((repeat.to - repeat.from) > chunks)
+			repeat.to = repeat.from + chunks;
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+				"Learner has holes from %d to %d\n", repeat.from, repeat.to);
+		__attribute__((unused)) paxos_message repeat_msg = {
+			.type = PAXOS_REPEAT,
+			.u.repeat = repeat,
+		};
+	}
+	/* this timer is automatically reloaded until we decide to stop it */
+	if (force_quit)
+		rte_timer_stop(tim);
+}
 
 static __attribute__((noreturn)) int
 lcore_mainloop(__attribute__((unused)) void *arg)
@@ -382,7 +408,6 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
-	rte_set_log_level(RTE_LOG_DEBUG);
 
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports < 2 || (nb_ports & 1))
@@ -397,22 +422,28 @@ main(int argc, char *argv[])
 
 	//initialize learner
 	struct learner *learner = learner_new(NUM_ACCEPTORS);
-	learner_set_instance_id(learner, -1);
+	learner_set_instance_id(learner, 0);
 
 	/* init RTE timer library */
 	rte_timer_subsystem_init();
 
 	/* init timer structure */
-	rte_timer_init(&timer0);
+	rte_timer_init(&deliver_timer);
+	rte_timer_init(&hole_timer);
 
-	/* load timer0, every second, on a slave lcore, reloaded automatically */
+	/* load deliver_timer, every second, on a slave lcore, reloaded automatically */
 	uint64_t hz = rte_get_timer_hz();
 	/* master core */
 	master_core = rte_lcore_id();
 	/* slave core */
 	lcore_id = rte_get_next_lcore(master_core, 0, 1);
-	rte_timer_reset(&timer0, hz, PERIODICAL, lcore_id, check_deliver, learner);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
+	rte_timer_reset(&deliver_timer, hz, PERIODICAL, lcore_id, check_deliver, learner);
 
+	/* slave core */
+	lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
+	rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, learner);
 
 	for (portid = 0; portid < nb_ports; portid++)
 		if (port_init(portid, mbuf_pool, learner) != 0)
