@@ -47,8 +47,8 @@ SRCS-y := main.c
 CFLAGS += $(WERROR_FLAGS)
 
 # Link libpaxos
-CFLAGS += -I$(PWD)/include
-LDFLAGS += -L$(PWD)/lib
+CFLAGS += -I$(PWD)/../include -I$(PWD)/..
+LDFLAGS += -L$(PWD)/../lib
 LDLIBS += -lpaxos
 
 # workaround for a gcc bug with noreturn attribute
