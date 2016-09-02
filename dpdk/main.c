@@ -29,7 +29,8 @@
 #include <rte_cycles.h>
 
 /* number of elements in the mbuf pool */
-#define NUM_MBUFS 255
+/* NOTICE: works only with 511 */
+#define NUM_MBUFS 511
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
 /* Maximum number of packets in sending or receiving */
@@ -334,7 +335,7 @@ lcore_main(void)
 			const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
 			if (unlikely(nb_rx == 0))
 				continue;
-			const uint16_t nb_tx = rte_eth_tx_burst(port ^ 1, 0,
+			const uint16_t nb_tx = rte_eth_tx_burst(port, 0,
 					bufs, nb_rx);
 			if (unlikely(nb_tx < nb_rx)) {
 				uint16_t buf;
@@ -415,7 +416,7 @@ craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
 
 static void
 send_repeat_message(paxos_message *pm) {
-	uint8_t port_id = 1;
+	uint8_t port_id = 0;
 	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
 	created_pkt->l2_len = sizeof(struct ether_hdr);
 	created_pkt->l3_len = sizeof(struct ipv4_hdr);
@@ -500,15 +501,13 @@ main(int argc, char *argv[])
 
 
 	nb_ports = rte_eth_dev_count();
-	if (nb_ports < 2 || (nb_ports & 1))
-		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
 
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
 			NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0,
 			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
 	if (mbuf_pool == NULL)
-		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
+		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
 	//initialize learner
 	struct learner *learner = learner_new(NUM_ACCEPTORS);
