@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <signal.h>
-#include <stdbool.h>
 
 #include <rte_eal.h>
 #include <rte_ethdev.h>
@@ -21,26 +20,9 @@
 #include <rte_log.h>
 /* paxos header definition */
 #include "rte_paxos.h"
+#include "utils.h"
+#include "const.h"
 
-/* number of elements in the mbuf pool */
-#define NUM_MBUFS 8191
-/* Size of the per-core object cache */
-#define MBUF_CACHE_SIZE 250
-/* Maximum number of packets in sending or receiving */
-#define BURST_SIZE 32
-
-#define RX_RING_SIZE 128
-#define TX_RING_SIZE 512
-
-#define DEFAULT_PAXOS_PORT 34952
-
-#define NUM_ACCEPTORS 3
-
-#define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
-
-#define BUFSIZE 1500
-
-volatile bool force_quit;
 
 static unsigned nb_ports;
 
@@ -53,18 +35,6 @@ static struct {
 	uint64_t total_pkts;
 } latency_numbers;
 
-/* structure that caches offload info for the current packet */
-union tunnel_offload_info {
-	uint64_t data;
-	struct {
-		uint64_t l2_len:7; /**< L2 (MAC) Header Length. */
-		uint64_t l3_len:9; /**< L3 (IP) Header Length. */
-		uint64_t l4_len:8; /**< L4 Header Length. */
-		uint64_t tso_segsz:16; /**< TCP TSO segment size */
-		uint64_t outer_l2_len:7; /**< outer L2 Header Length */
-		uint64_t outer_l3_len:16; /**< outer L3 Header Length */
-	};
-} __rte_cache_aligned;
 
 struct rte_mempool *mbuf_pool;
 
@@ -72,68 +42,8 @@ struct coordinator {
 	uint32_t cur_inst; /* Paxos instance */
 };
 
-/**
- * Parse an ethernet header to fill the ethertype, outer_l2_len, outer_l3_len and
- * ipproto. This function is able to recognize IPv4/IPv6 with one optional vlan
- * header.
- */
-static void
-parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
-		uint8_t *l4_proto)
-{
-	struct ipv4_hdr *ipv4_hdr;
-	struct ipv6_hdr *ipv6_hdr;
-	uint16_t ethertype;
 
-	info->outer_l2_len = sizeof(struct ether_hdr);
-	ethertype = rte_be_to_cpu_16(eth_hdr->ether_type);
 
-	if (ethertype == ETHER_TYPE_VLAN) {
-		struct vlan_hdr *vlan_hdr = (struct vlan_hdr *)(eth_hdr + 1);
-		info->outer_l2_len  += sizeof(struct vlan_hdr);
-		ethertype = rte_be_to_cpu_16(vlan_hdr->eth_proto);
-	}
-
-	switch (ethertype) {
-	case ETHER_TYPE_IPv4:
-		ipv4_hdr = (struct ipv4_hdr *)
-			((char *)eth_hdr + info->outer_l2_len);
-		info->outer_l3_len = sizeof(struct ipv4_hdr);
-		*l4_proto = ipv4_hdr->next_proto_id;
-		break;
-	case ETHER_TYPE_IPv6:
-		ipv6_hdr = (struct ipv6_hdr *)
-			((char *)eth_hdr + info->outer_l2_len);
-		info->outer_l3_len = sizeof(struct ipv6_hdr);
-		*l4_proto = ipv6_hdr->proto;
-		break;
-	default:
-		info->outer_l3_len = 0;
-		*l4_proto = 0;
-		break;
-	}
-}
-
-static void
-print_paxos_hdr(struct paxos_hdr *p)
-{
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-		"{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u\n",
-		rte_be_to_cpu_16(p->msgtype),
-		rte_be_to_cpu_32(p->inst),
-		rte_be_to_cpu_16(p->rnd),
-		rte_be_to_cpu_16(p->vrnd),
-		rte_be_to_cpu_16(p->acptid));
-}
-
-static uint16_t
-get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags)
-{
-	if (ethertype == ETHER_TYPE_IPv4)
-		return rte_ipv4_phdr_cksum(l3_hdr, ol_flags);
-	else /* assume ethertype == ETHER_TYPE_IPv6 */
-		return rte_ipv6_phdr_cksum(l3_hdr, ol_flags);
-}
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
@@ -276,17 +186,6 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct coordinator* cord)
 	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
 	return 0;
 }
-
-static void
-signal_handler(int signum)
-{
-	if (signum == SIGINT || signum == SIGTERM) {
-		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
-				"\n\nSignal %d received, preparing to exit...\n", signum);
-		force_quit = true;
-	}
-}
-
 
 static void
 lcore_main(void)

@@ -8,3 +8,4 @@ tests/
 *.pyc
 test_app/build
 *DS_Store
+*.o*

@@ -42,7 +42,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = learner
 
 # all source are stored in SRCS-y
-SRCS-y := main.c
+SRCS-y := main.c $(PWD)/../utils.c
 
 CFLAGS += $(WERROR_FLAGS)
 
