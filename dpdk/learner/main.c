@@ -29,8 +29,7 @@
 #include <rte_cycles.h>
 
 /* number of elements in the mbuf pool */
-/* NOTICE: works only with 511 */
-#define NUM_MBUFS 511
+#define NUM_MBUFS 8191
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
 /* Maximum number of packets in sending or receiving */
