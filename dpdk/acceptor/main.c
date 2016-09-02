@@ -19,7 +19,7 @@
 #include <rte_malloc.h>
 /* paxos header definition */
 #include "rte_paxos.h"
-/* libpaxos learner */
+/* libpaxos acceptor */
 #include "acceptor.h"
 /* logging */
 #include <rte_log.h>
@@ -29,8 +29,7 @@
 #include <rte_cycles.h>
 
 /* number of elements in the mbuf pool */
-/* NOTICE: works only with 511 */
-#define NUM_MBUFS 511
+#define NUM_MBUFS 8191
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
 /* Maximum number of packets in sending or receiving */
@@ -426,98 +425,12 @@ lcore_main(void)
 }
 
 
-__attribute__((unused))
-static uint64_t
-craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
-		uint16_t sport, uint16_t dport, size_t data_size, uint8_t output_port)
-{
-	uint64_t ol_flags = 0;
-	size_t pkt_size = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
-		sizeof(struct udp_hdr) + data_size;
-	(*created_pkt)->data_len = pkt_size;
-	(*created_pkt)->pkt_len = pkt_size;
-	struct ether_hdr *eth;
-	eth = rte_pktmbuf_mtod(*created_pkt, struct ether_hdr*);
-	/* set packet s_addr using mac address of output port */
-	rte_eth_macaddr_get(output_port, &eth->s_addr);
-	/* Set multicast address 01-1b-19-00-00-00 */
-	ether_addr_copy(&ether_multicast, &eth->d_addr);
-	eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
-	struct ipv4_hdr *iph;
-	iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(*created_pkt, struct ipv4_hdr*,
-			sizeof(struct ether_hdr));
-	iph->src_addr = rte_cpu_to_be_32(srcIP);
-	iph->dst_addr = rte_cpu_to_be_32(dstIP);
-	iph->version_ihl = 0x45;
-	iph->hdr_checksum = 0;
-	ol_flags |= PKT_TX_IPV4;
-	ol_flags |= PKT_TX_IP_CKSUM;
-	iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) +
-			sizeof(struct udp_hdr) + sizeof(paxos_message));
-	iph->next_proto_id = IPPROTO_UDP;
-	struct udp_hdr *udp;
-	udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
-	udp->src_port = rte_cpu_to_be_16(sport);
-	udp->dst_port = rte_cpu_to_be_16(dport);
-	ol_flags |= PKT_TX_UDP_CKSUM;
-	udp->dgram_len = rte_cpu_to_be_16(data_size);
-	udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, ol_flags);
-	return ol_flags;
-}
-
-__attribute__((unused))
-static void
-send_repeat_message(paxos_message *pm) {
-	uint8_t port_id = 0;
-	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
-	created_pkt->l2_len = sizeof(struct ether_hdr);
-	created_pkt->l3_len = sizeof(struct ipv4_hdr);
-	created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
-	uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
-			34951, 34952, sizeof(paxos_message), port_id);
-	//struct udp_hdr *udp;
-	size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
-	//udp  = rte_pktmbuf_mtod_offset(created_pkt, struct udp_hdr *, udp_offset);
-	size_t paxos_offset = udp_offset + sizeof(struct udp_hdr);
-	paxos_message *px = rte_pktmbuf_mtod_offset(created_pkt, paxos_message *, paxos_offset);
-	rte_memcpy(px, pm, sizeof(*pm));	
-	//udp->dgram_cksum = get_psd_sum(udp, ETHER_TYPE_IPv4, ol_flags);
-	created_pkt->ol_flags = ol_flags;
-	const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
-	rte_pktmbuf_free(created_pkt);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d repeated messages\n", nb_tx);
-}
-
-
-/*
-static __attribute__((noreturn)) int
-lcore_mainloop(__attribute__((unused)) void *arg)
-{
-	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
-	unsigned lcore_id;
-
-	lcore_id = rte_lcore_id();
-
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
-			"Starting mainloop on core %u\n", lcore_id);
-
-	while(1) {
-		cur_tsc = rte_rdtsc();
-		diff_tsc = cur_tsc - prev_tsc;
-		if (diff_tsc > TIMER_RESOLUTION_CYCLES) {
-			rte_timer_manage();
-			prev_tsc = cur_tsc;
-		}
-	}
-}
-*/
 
 int
 main(int argc, char *argv[])
 {
 	int acceptor_id = 2;
 	uint8_t portid = 0;
-	//unsigned master_core, lcore_id;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;
@@ -541,38 +454,10 @@ main(int argc, char *argv[])
 	//initialize acceptor
 	struct acceptor *acceptor = acceptor_new(acceptor_id);
 
-	/* init RTE timer library */
-	rte_timer_subsystem_init();
-
-	/* init timer structure */
-	//rte_timer_init(&timer);
-	//rte_timer_init(&hole_timer);
-
-	/* load timer, every second, on a slave lcore, reloaded automatically */
-	//uint64_t hz = rte_get_timer_hz();
-	/* master core */
-	//master_core = rte_lcore_id();
-	/* slave core */
-	//lcore_id = rte_get_next_lcore(master_core, 0, 1);
-	//rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	//rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, check_deliver, learner);
-
-	/* slave core */
-	//lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
-	//rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	//rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, learner);
-
 	for (portid = 0; portid < nb_ports; portid++)
 		if (port_init(portid, mbuf_pool, acceptor) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
-
-	/* start mainloop on every lcore */
-	/*
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-		rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
-	}
-	*/
 
 	lcore_main();
 
