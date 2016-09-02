@@ -408,8 +408,8 @@ craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
 	udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
 	udp->src_port = rte_cpu_to_be_16(sport);
 	udp->dst_port = rte_cpu_to_be_16(dport);
-	//ol_flags |= PKT_TX_UDP_CKSUM;
-	udp->dgram_cksum = 0;
+	ol_flags |= PKT_TX_UDP_CKSUM;
+	udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, ol_flags);
 	udp->dgram_len = rte_cpu_to_be_16(data_size);
 	return ol_flags;
 }
