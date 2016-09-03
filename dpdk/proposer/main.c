@@ -26,6 +26,8 @@
 
 #define PREEXEC_WINDOW 10
 
+static struct rte_timer timer;
+
 static unsigned nb_ports;
 
 static const struct rte_eth_conf port_conf_default = {
@@ -390,11 +392,26 @@ lcore_mainloop(__attribute__((unused)) void *arg)
 	}
 }
 
+static void
+check_timeout(struct rte_timer *tim,
+		void *arg)
+{
+	struct proposer* p = (struct proposer *) arg;
+	unsigned lcore_id = rte_lcore_id();
+
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
+
+	proposer_preexecute(p);
+	/* this timer is automatically reloaded until we decide to stop it */
+	if (force_quit)
+		rte_timer_stop(tim);
+}
+
 int
 main(int argc, char *argv[])
 {
 	uint8_t portid = 0;
-	__attribute((unused)) unsigned master_core, lcore_id;
+	unsigned master_core, lcore_id;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;
@@ -406,6 +423,18 @@ main(int argc, char *argv[])
 
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+
+	/* init timer structure */
+	rte_timer_init(&timer);
+
+	/* load deliver_timer, every second, on a slave lcore, reloaded automatically */
+	uint64_t hz = rte_get_timer_hz();
+	/* master core */
+	master_core = rte_lcore_id();
+	/* slave core */
+	lcore_id = rte_get_next_lcore(master_core, 0, 1);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
+	rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, check_timeout, proposer);
 
 
 	nb_ports = rte_eth_dev_count();
@@ -426,9 +455,14 @@ main(int argc, char *argv[])
 		if (port_init(portid, mbuf_pool, proposer) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
+	/* start mainloop on every lcore */
+	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+		rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
+	}
 
 	lcore_main();
 
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Free proposer\n");
 	proposer_free(proposer);
 	return 0;
 }
