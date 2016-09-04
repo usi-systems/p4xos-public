@@ -101,7 +101,7 @@ send_paxos_message(paxos_message *pm) {
 	created_pkt->ol_flags = ol_flags;
 	const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
 	rte_pktmbuf_free(created_pkt);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d repeated messages\n", nb_tx);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d messages\n", nb_tx);
 }
 
 static void
@@ -193,6 +193,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct proposer* proposer)
 				.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
 				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 				.value = *v };
+			rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
+				"Received promise message\n");
 			proposer_handle_promise(proposer, &promise);
 			break;
 		}

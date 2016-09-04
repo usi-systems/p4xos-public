@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 /* number of elements in the mbuf pool */
-#define NUM_MBUFS 8191
+#define NUM_MBUFS 1023
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
 /* Maximum number of packets in sending or receiving */
