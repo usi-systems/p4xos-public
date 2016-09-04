@@ -152,6 +152,12 @@ proposer_handle_promise(struct proposer *p, struct paxos_promise *promise)
 	try_accept(p);
 }
 
+static void
+proposer_handle_accepted(struct proposer *p, struct paxos_accepted *ack)
+{
+	if (proposer_receive_accepted(p, ack))
+		try_accept(p);
+}
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct proposer* proposer)
@@ -198,23 +204,19 @@ paxos_rx_process(struct rte_mbuf *pkt, struct proposer* proposer)
 			proposer_handle_promise(proposer, &promise);
 			break;
 		}
-		case PAXOS_ACCEPT:
-			break;
-		case PAXOS_ACCEPTED:
-			break;
-		default:
-			break;
-	}
-	/*
-	struct paxos_accepted ack = {
+		case PAXOS_ACCEPTED: {
+			struct paxos_accepted ack = {
 			.iid = rte_be_to_cpu_32(paxos_hdr->inst),
 			.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
 			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
-
-	proposer_receive_accepted(l, &ack);
-	*/
+			proposer_handle_accepted(proposer, &ack);
+			break;
+		}
+		default:
+			break;
+	}
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
 		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
 
@@ -253,7 +255,7 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		cycles += now - pkts[i]->udata64;
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
 				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
 				latency_numbers.total_pkts, cycles);
 	}
@@ -332,7 +334,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct proposer* proposer
 
 
 static void
-lcore_main(void)
+lcore_main(struct proposer *p)
 {
 	uint8_t port;
 
@@ -349,7 +351,10 @@ lcore_main(void)
 			rte_lcore_id());
 
 
+	proposer_preexecute(p);
+
 	for (;;) {
+
 		// Check if signal is received
 		if (force_quit)
 			break;
@@ -403,7 +408,24 @@ check_timeout(struct rte_timer *tim,
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
 
-	proposer_preexecute(p);
+	struct paxos_message out;
+	out.type = PAXOS_PREPARE;
+	struct timeout_iterator* iter = proposer_timeout_iterator(p);
+	while(timeout_iterator_prepare(iter, &out.u.prepare)) {
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+			"Send PREPARE inst %d ballot %d\n",
+			out.u.prepare.iid, out.u.prepare.ballot);
+		send_paxos_message(&out);
+	}
+
+	out.type = PAXOS_ACCEPT;
+	while(timeout_iterator_accept(iter, &out.u.accept)) {
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+			"Send ACCEPT inst %d ballot %d\n",
+			out.u.prepare.iid, out.u.prepare.ballot);
+		send_paxos_message(&out);
+	}
+	timeout_iterator_free(iter);
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
@@ -418,6 +440,7 @@ main(int argc, char *argv[])
 	signal(SIGINT, signal_handler);
 	force_quit = false;
 	int proposer_id = 0;
+	//paxos_config.verbosity = PAXOS_LOG_DEBUG;
 	struct proposer *proposer = proposer_new(proposer_id, NUM_ACCEPTORS);
 
 	/* init EAL */
@@ -462,7 +485,7 @@ main(int argc, char *argv[])
 		rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
 	}
 
-	lcore_main();
+	lcore_main(proposer);
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Free proposer\n");
 	proposer_free(proposer);
