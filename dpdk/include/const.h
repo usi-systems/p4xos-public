@@ -13,14 +13,16 @@
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 512
 
-#define DEFAULT_PAXOS_PORT 34952
-
 #define NUM_ACCEPTORS 3
 
 #define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
 
 #define BUFSIZE 1500
 
+#define PROPOSER_PORT    34950
+#define COORDINATOR_PORT 34951
+#define ACCEPTOR_PORT    34952
+#define LEARNER_PORT     34953
 volatile bool force_quit;
 
 #endif

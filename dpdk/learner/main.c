@@ -70,7 +70,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 	udp_hdr = (struct udp_hdr *)((char *)phdr +
 			info.outer_l2_len + info.outer_l3_len);
 
-	if (udp_hdr->dst_port != rte_cpu_to_be_16(DEFAULT_PAXOS_PORT) &&
+	if (udp_hdr->dst_port != rte_cpu_to_be_16(LEARNER_PORT) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
 		return -1;
 
@@ -315,7 +315,7 @@ send_repeat_message(paxos_message *pm) {
 	created_pkt->l3_len = sizeof(struct ipv4_hdr);
 	created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(paxos_message);
 	uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
-			34951, 34952, sizeof(paxos_message), port_id);
+			LEARNER_PORT, ACCEPTOR_PORT, sizeof(paxos_message), port_id);
 	//struct udp_hdr *udp;
 	size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
 	//udp  = rte_pktmbuf_mtod_offset(created_pkt, struct udp_hdr *, udp_offset);

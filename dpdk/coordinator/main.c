@@ -65,7 +65,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	udp_hdr = (struct udp_hdr *)((char *)phdr +
 			info.outer_l2_len + info.outer_l3_len);
 
-	if (udp_hdr->dst_port != rte_cpu_to_be_16(DEFAULT_PAXOS_PORT) &&
+	if (udp_hdr->dst_port != rte_cpu_to_be_16(COORDINATOR_PORT) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
 		return -1;
 
@@ -83,6 +83,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	pkt->l3_len = sizeof(struct ipv4_hdr);
 	pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
+	udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct paxos_hdr));
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
 

@@ -91,7 +91,7 @@ send_paxos_message(paxos_message *pm) {
 	created_pkt->l3_len = sizeof(struct ipv4_hdr);
 	created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(paxos_message);
 	uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
-			34950, 34951, sizeof(paxos_message), port_id);
+			PROPOSER_PORT, ACCEPTOR_PORT, sizeof(paxos_message), port_id);
 	//struct udp_hdr *udp;
 	size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
 	//udp  = rte_pktmbuf_mtod_offset(created_pkt, struct udp_hdr *, udp_offset);

@@ -83,7 +83,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 	udp_hdr = (struct udp_hdr *)((char *)phdr +
 			info.outer_l2_len + info.outer_l3_len);
 
-	if (udp_hdr->dst_port != rte_cpu_to_be_16(DEFAULT_PAXOS_PORT) &&
+	if (udp_hdr->dst_port != rte_cpu_to_be_16(ACCEPTOR_PORT) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
 		return -1;
 
@@ -109,6 +109,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
 			ret = acceptor_receive_prepare(acceptor, &prepare, &out);
+			udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
+			udp_hdr->dst_port = rte_cpu_to_be_16(PROPOSER_PORT);
 			break;
 		}
 		case PAXOS_ACCEPT:
@@ -122,6 +124,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
 			ret = acceptor_receive_accept(acceptor, &accept, &out);
+			udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
+			udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 			break;
 		}
 		default:
