@@ -41,13 +41,15 @@ include $(RTE_SDK)/mk/rte.vars.mk
 # binary name
 APP = proposer
 
+VPATH = $(SRCDIR)/../lib
 # all source are stored in SRCS-y
-SRCS-y := main.c $(PWD)/../utils.c
+SRCS-y := main.c
+SRCS-y += utils.c
 
 CFLAGS += $(WERROR_FLAGS)
 
 # Link libpaxos
-CFLAGS += -I$(PWD)/../include -I$(PWD)/..
+CFLAGS += -I$(PWD)/../include
 LDFLAGS += -L$(PWD)/../lib
 LDLIBS += -lpaxos
 
