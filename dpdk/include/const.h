@@ -26,4 +26,6 @@
 #define LEARNER_PORT     34953
 volatile bool force_quit;
 
+#define PREEXEC_WINDOW 128
+
 #endif

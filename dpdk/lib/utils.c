@@ -3,7 +3,7 @@
 #include <rte_log.h>
 #include "utils.h"
 #include "const.h"
-
+#include "paxos.h"
 /**
  * Parse an ethernet header to fill the ethertype, outer_l2_len, outer_l3_len and
  * ipproto. This function is able to recognize IPv4/IPv6 with one optional vlan
@@ -77,4 +77,37 @@ signal_handler(int signum)
 	}
 }
 
+__attribute((unused))
+static void
+dump_paxos_message(paxos_message *m) {
+	printf("{ .type = %d, .iid = %d, .ballot = %d, .value_ballot = %d, .value = { .len = %d, val = %s}}\n",
+			m->type, m->u.accept.iid, m->u.accept.ballot, m->u.accept.value_ballot,
+			m->u.accept.value.paxos_value_len,
+			m->u.accept.value.paxos_value_val);
+}
 
+__attribute((unused))
+static void
+dump_accept_message(paxos_accept *m) {
+	printf("dump_accept_message\n");
+	printf("ACCEPT: .iid = %d, .ballot = %d, .value_ballot = %d, .value = ",
+			m->iid, m->ballot, m->value_ballot);
+	if ((m->value.paxos_value_val) != NULL) {
+		printf(" {.len=%d, val=%s}\n",
+				m->value.paxos_value_len,
+				m->value.paxos_value_val);
+	} else printf("NULL }\n");
+}
+
+__attribute((unused))
+static void
+dump_promise_message(paxos_promise *m) {
+	printf("dump_promise_message\n");
+	printf("PROMISE: .iid = %d, .ballot = %d, .value_ballot = %d, .value = ",
+			m->iid, m->ballot, m->value_ballot);
+	if ((m->value.paxos_value_val) != NULL) {
+		printf(" {.len=%d, val=%s}\n",
+				m->value.paxos_value_len,
+				m->value.paxos_value_val);
+	} else printf("NULL }\n");
+}
