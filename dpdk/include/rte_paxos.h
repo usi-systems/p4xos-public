@@ -13,6 +13,7 @@ struct paxos_hdr {
 	uint16_t rnd;
 	uint16_t vrnd;
 	uint16_t acptid;
+	uint16_t value_len;
 	uint8_t paxosval[32];
 } __attribute__((__packed__));
 

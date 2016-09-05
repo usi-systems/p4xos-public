@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 /* number of elements in the mbuf pool */
-#define NUM_MBUFS 1023
+#define NUM_MBUFS 8191
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 250
 /* Maximum number of packets in sending or receiving */
@@ -13,7 +13,8 @@
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 512
 
-#define NUM_ACCEPTORS 3
+/* 1 acceptor for debugging */
+#define NUM_ACCEPTORS 1
 
 #define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
 

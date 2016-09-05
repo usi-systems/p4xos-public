@@ -49,6 +49,7 @@ static struct {
 
 struct rte_mempool *mbuf_pool;
 
+__attribute((unused))
 static void
 dump_paxos_message(paxos_message *m)
 {
@@ -59,6 +60,14 @@ dump_paxos_message(paxos_message *m)
 	for (; i < m->u.accept.value.paxos_value_len; i++)
 		printf("%02X", m->u.accept.value.paxos_value_val[i]);
 	printf(" }}\n");
+}
+
+__attribute((unused))
+static void
+dump_prepare_message(paxos_prepare *m)
+{
+	printf("{ .type = PREPARE, .iid = %d, .ballot = %d, .value_ballot = %d\n",
+			m->iid, m->ballot, m->value_ballot);
 }
 
 
@@ -108,6 +117,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
+			//dump_prepare_message(&prepare);
 			ret = acceptor_receive_prepare(acceptor, &prepare, &out);
 			udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 			udp_hdr->dst_port = rte_cpu_to_be_16(PROPOSER_PORT);
@@ -141,12 +151,15 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			{
 				rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
 					"Promised Paxos message\n");
-				dump_paxos_message(&out);
+				//dump_paxos_message(&out);
+				paxos_hdr->inst = rte_cpu_to_be_32(out.u.promise.iid);
 				paxos_hdr->rnd = rte_cpu_to_be_16(out.u.promise.ballot);
 				paxos_hdr->vrnd = rte_cpu_to_be_16(out.u.promise.value_ballot);
 				paxos_hdr->acptid = rte_cpu_to_be_16(out.u.promise.aid);
-				if (out.u.promise.value.paxos_value_val != NULL)
-					rte_memcpy(paxos_hdr->paxosval, out.u.promise.value.paxos_value_val, 32);
+				paxos_hdr->value_len = rte_cpu_to_be_16(out.u.promise.value.paxos_value_len);
+				if (out.u.promise.value.paxos_value_len != 0)
+					rte_memcpy(paxos_hdr->paxosval, out.u.promise.value.paxos_value_val,
+							out.u.promise.value.paxos_value_len);
 				break;
 			}
 			case PAXOS_ACCEPTED:
@@ -213,9 +226,11 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		cycles += now - pkts[i]->udata64;
+		/*
 		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
 				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
 				latency_numbers.total_pkts, cycles);
+		*/
 	}
 
 	latency_numbers.total_cycles += cycles;
@@ -310,6 +325,7 @@ lcore_main(void)
 			const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
 			if (unlikely(nb_rx == 0))
 				continue;
+
 			const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
 			if (unlikely(nb_tx < nb_rx)) {
 				uint16_t buf;
@@ -326,7 +342,7 @@ lcore_main(void)
 int
 main(int argc, char *argv[])
 {
-	int acceptor_id = 2;
+	int acceptor_id = 0;
 	uint8_t portid = 0;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
