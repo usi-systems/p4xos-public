@@ -444,22 +444,25 @@ main(int argc, char *argv[])
 	rte_timer_init(&stat_timer);
 
 	/* load deliver_timer, every 1 s, on a slave lcore, reloaded automatically */
-	uint64_t TIMER_RESOLUTION_CYCLES = rte_get_timer_hz();
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER1, "Clock: %"PRIu64"\n", TIMER_RESOLUTION_CYCLES);
+    uint64_t hz = rte_get_timer_hz();
+
+    /* Call rte_timer_manage every 10ms */
+	TIMER_RESOLUTION_CYCLES = hz / 100;
+	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER1, "Clock: %"PRIu64"\n", hz);
 
 	/* master core */
 	master_core = rte_lcore_id();
 	/* slave core */
 	lcore_id = rte_get_next_lcore(master_core, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&timer, TIMER_RESOLUTION_CYCLES, PERIODICAL, lcore_id, check_timeout, proposer);
+	rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, check_timeout, proposer);
 	/* reset timer */
 	rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
 
 	/* stat core */
 	lcore_id = rte_get_next_lcore(lcore_id , 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&stat_timer, TIMER_RESOLUTION_CYCLES, PERIODICAL, lcore_id,
+	rte_timer_reset(&stat_timer, hz, PERIODICAL, lcore_id,
 						report_stat, NULL);
 
 	/* init RTE timer library */

@@ -68,9 +68,9 @@ static struct rte_timer timer;
 
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
-#define MEASUREMENT_PERIOD 5
-static uint32_t total_tp;
-static uint32_t at_second;
+// #define MEASUREMENT_PERIOD 5
+// static uint32_t total_tp;
+// static uint32_t at_second;
 
 static int
 generate_packets(__attribute__((unused)) void *arg)
@@ -184,10 +184,11 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
     rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
             "%s on core %d\n", __func__, rte_lcore_id());
     int count = rte_atomic32_read(&counter);
-    total_tp += count;
-    // rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
-    //             "%8"PRIu32 "\n", count);
+    // total_tp += count;
+    rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
+                "%8"PRIu32 "\n", count);
     rte_atomic32_set(&counter, 0);
+    /*
     if (at_second == MEASUREMENT_PERIOD) {
         rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
                     "%8d \n", total_tp / MEASUREMENT_PERIOD);
@@ -195,7 +196,7 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
         at_second = 0;
     } else
         at_second++;
-
+    */
 	if (force_quit)
 		rte_timer_stop(tim);
 }
@@ -248,9 +249,11 @@ main(int argc, char *argv[])
                 rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
 	rte_timer_init(&timer);
-	CYCLES_PER_SECOND = rte_get_timer_hz();
+    uint64_t hz = rte_get_timer_hz();
+    /* increase call frequency to rte_timer_manage() to increase the precision */
+    CYCLES_PER_SECOND = hz / 100;
     rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-            "1 cycle is %3.2f ns\n", 1E9 / (double)CYCLES_PER_SECOND);
+            "1 cycle is %3.2f ns\n", 1E9 / (double)hz);
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
@@ -268,7 +271,7 @@ main(int argc, char *argv[])
         master_core = rte_lcore_id();
         /* slave core */
         lcore_id = rte_get_next_lcore(master_core, 0, 1);
-	rte_timer_reset(&timer, CYCLES_PER_SECOND, PERIODICAL, lcore_id, report_stat, NULL);
+	rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
 	rte_timer_subsystem_init();
 	rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
 

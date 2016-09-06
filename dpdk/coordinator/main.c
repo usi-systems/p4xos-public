@@ -24,8 +24,6 @@
 #include "const.h"
 
 
-static unsigned nb_ports;
-
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
@@ -104,8 +102,6 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 		pkts[i]->udata64 = now;
 		paxos_rx_process(pkts[i], cord);
 	}
-
-
 	return nb_pkts;
 }
 
@@ -120,9 +116,6 @@ calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		cycles += now - pkts[i]->udata64;
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
-				latency_numbers.total_pkts, cycles);
 	}
 
 	latency_numbers.total_cycles += cycles;
@@ -189,40 +182,35 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct coordinator* cord)
 }
 
 static void
-lcore_main(void)
+lcore_main(uint8_t port)
 {
-	uint8_t port;
 
-	for (port = 0; port < nb_ports; port++)
-		if (rte_eth_dev_socket_id(port) > 0 &&
-				rte_eth_dev_socket_id(port) !=
-					(int) rte_socket_id())
-			rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-					"WARNING, port %u is on retmote NUMA node to "
-					"polling thread.\nPerformance will "
-					"not be optimal.\n", port);
+	if (rte_eth_dev_socket_id(port) > 0 &&
+			rte_eth_dev_socket_id(port) !=
+				(int) rte_socket_id())
+		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
+				"WARNING, port %u is on retmote NUMA node to "
+				"polling thread.\nPerformance will "
+				"not be optimal.\n", port);
 
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. [Ctrl+C to quit]\n",
-			rte_lcore_id());
-
+	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. "
+					"[Ctrl+C to quit]\n", rte_lcore_id());
 
 	for (;;) {
 		// Check if signal is received
 		if (force_quit)
 			break;
 
-		for (port = 0; port < nb_ports; port++) {
-			struct rte_mbuf *bufs[BURST_SIZE];
-			const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
-			if (unlikely(nb_rx == 0))
-				continue;
-			const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
-			if (unlikely(nb_tx < nb_rx)) {
-				uint16_t buf;
+		struct rte_mbuf *bufs[BURST_SIZE];
+		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+		if (unlikely(nb_rx == 0))
+			continue;
 
-				for (buf = nb_tx; buf < nb_rx; buf++)
-					rte_pktmbuf_free(bufs[buf]);
-			}
+		const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
+		if (unlikely(nb_tx < nb_rx)) {
+			uint16_t idx;
+			for (idx = nb_tx; idx < nb_rx; idx++)
+				rte_pktmbuf_free(bufs[idx]);
 		}
 	}
 }
@@ -244,21 +232,18 @@ main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
 
-	nb_ports = rte_eth_dev_count();
-
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
-			NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0,
+			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
 			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
 
-	for (portid = 0; portid < nb_ports; portid++)
-		if (port_init(portid, mbuf_pool, &c) != 0)
-			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
+	if (port_init(portid, mbuf_pool, &c) != 0)
+		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
-	lcore_main();
+	lcore_main(portid);
 
 	return 0;
 }

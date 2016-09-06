@@ -379,6 +379,9 @@ main(int argc, char *argv[])
 
 	/* load deliver_timer, every second, on a slave lcore, reloaded automatically */
 	uint64_t hz = rte_get_timer_hz();
+
+	/* Call rte_timer_manage every 10ms */
+	TIMER_RESOLUTION_CYCLES = hz / 100;
 	/* master core */
 	master_core = rte_lcore_id();
 	/* slave core */
