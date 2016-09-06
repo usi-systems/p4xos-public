@@ -487,13 +487,12 @@ main(int argc, char *argv[])
 	uint64_t TIMER_RESOLUTION_CYCLES = rte_get_timer_hz();
 	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER1, "Clock: %"PRIu64"\n", TIMER_RESOLUTION_CYCLES);
 
-	uint64_t ten_ms = TIMER_RESOLUTION_CYCLES / 10;
 	/* master core */
 	master_core = rte_lcore_id();
 	/* slave core */
 	lcore_id = rte_get_next_lcore(master_core, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&timer, ten_ms, PERIODICAL, lcore_id, check_timeout, proposer);
+	rte_timer_reset(&timer, TIMER_RESOLUTION_CYCLES, PERIODICAL, lcore_id, check_timeout, proposer);
 	/* reset timer */
 	rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
 
