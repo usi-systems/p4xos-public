@@ -16,8 +16,6 @@
 /* 1 acceptor for debugging */
 #define NUM_ACCEPTORS 1
 
-#define TIMER_RESOLUTION_CYCLES 20000000ULL /* around 10ms at 2 Ghz */
-
 #define BUFSIZE 1500
 
 #define PROPOSER_PORT    34950
