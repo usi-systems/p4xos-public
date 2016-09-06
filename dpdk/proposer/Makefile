@@ -44,14 +44,12 @@ APP = proposer
 VPATH = $(SRCDIR)/../lib
 # all source are stored in SRCS-y
 SRCS-y := main.c
-SRCS-y += dpdk_proposer.c
 SRCS-y += utils.c
 
 CFLAGS += $(WERROR_FLAGS)
 
 # Link libpaxos
 CFLAGS += -I$(PWD)/../include
-CFLAGS += -I$(PWD)/include
 LDFLAGS += -L$(PWD)/../lib
 LDLIBS += -lpaxos
 

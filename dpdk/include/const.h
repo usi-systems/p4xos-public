@@ -10,7 +10,7 @@
 /* Maximum number of packets in sending or receiving */
 #define BURST_SIZE 32
 
-#define RX_RING_SIZE 128
+#define RX_RING_SIZE 512
 #define TX_RING_SIZE 512
 
 /* 1 acceptor for debugging */
@@ -25,7 +25,5 @@
 #define ACCEPTOR_PORT    34952
 #define LEARNER_PORT     34953
 volatile bool force_quit;
-
-#define PREEXEC_WINDOW 128
 
 #endif
