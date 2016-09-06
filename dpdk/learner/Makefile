@@ -45,6 +45,7 @@ VPATH = $(SRCDIR)/../lib
 # all source are stored in SRCS-y
 SRCS-y := main.c
 SRCS-y += utils.c
+SRCS-y += rte_paxos.c
 
 CFLAGS += $(WERROR_FLAGS)
 

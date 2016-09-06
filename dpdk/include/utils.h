@@ -19,7 +19,5 @@ union tunnel_offload_info {
 
 void parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 		uint8_t *l4_proto);
-void print_paxos_hdr(struct paxos_hdr *p);
-uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags);
 void signal_handler(int signum);
 #endif

@@ -47,27 +47,6 @@ parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 }
 
 void
-print_paxos_hdr(struct paxos_hdr *p)
-{
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-		"{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u\n",
-		rte_be_to_cpu_16(p->msgtype),
-		rte_be_to_cpu_32(p->inst),
-		rte_be_to_cpu_16(p->rnd),
-		rte_be_to_cpu_16(p->vrnd),
-		rte_be_to_cpu_16(p->acptid));
-}
-
-uint16_t
-get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags)
-{
-	if (ethertype == ETHER_TYPE_IPv4)
-		return rte_ipv4_phdr_cksum(l3_hdr, ol_flags);
-	else /* assume ethertype == ETHER_TYPE_IPv6 */
-		return rte_ipv6_phdr_cksum(l3_hdr, ol_flags);
-}
-
-void
 signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {

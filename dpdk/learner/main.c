@@ -28,6 +28,7 @@
 #include "utils.h"
 
 static unsigned nb_ports;
+static uint64_t TIMER_RESOLUTION_CYCLES;
 
 /* learner timer for deliver */
 static struct rte_timer deliver_timer;
@@ -269,43 +270,6 @@ check_deliver(struct rte_timer *tim,
 }
 
 
-static uint64_t
-craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
-		uint16_t sport, uint16_t dport, size_t data_size, uint8_t output_port)
-{
-	uint64_t ol_flags = 0;
-	size_t pkt_size = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
-		sizeof(struct udp_hdr) + data_size;
-	(*created_pkt)->data_len = pkt_size;
-	(*created_pkt)->pkt_len = pkt_size;
-	struct ether_hdr *eth;
-	eth = rte_pktmbuf_mtod(*created_pkt, struct ether_hdr*);
-	/* set packet s_addr using mac address of output port */
-	rte_eth_macaddr_get(output_port, &eth->s_addr);
-	/* Set multicast address 01-1b-19-00-00-00 */
-	ether_addr_copy(&ether_multicast, &eth->d_addr);
-	eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
-	struct ipv4_hdr *iph;
-	iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(*created_pkt, struct ipv4_hdr*,
-			sizeof(struct ether_hdr));
-	iph->src_addr = rte_cpu_to_be_32(srcIP);
-	iph->dst_addr = rte_cpu_to_be_32(dstIP);
-	iph->version_ihl = 0x45;
-	iph->hdr_checksum = 0;
-	ol_flags |= PKT_TX_IPV4;
-	ol_flags |= PKT_TX_IP_CKSUM;
-	iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) +
-			sizeof(struct udp_hdr) + sizeof(paxos_message));
-	iph->next_proto_id = IPPROTO_UDP;
-	struct udp_hdr *udp;
-	udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
-	udp->src_port = rte_cpu_to_be_16(sport);
-	udp->dst_port = rte_cpu_to_be_16(dport);
-	ol_flags |= PKT_TX_UDP_CKSUM;
-	udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, ol_flags);
-	udp->dgram_len = rte_cpu_to_be_16(data_size);
-	return ol_flags;
-}
 
 static void
 send_repeat_message(paxos_message *pm) {

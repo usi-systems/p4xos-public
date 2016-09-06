@@ -2,6 +2,10 @@
 #define _RTE_PAXOS_H_
 
 #include <stdint.h>
+#include <stdio.h>
+#include <inttypes.h>
+#include <rte_mbuf.h>
+#include "paxos.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +20,16 @@ struct paxos_hdr {
 	uint16_t value_len;
 	uint8_t paxosval[32];
 } __attribute__((__packed__));
+
+void print_paxos_hdr(struct paxos_hdr *p);
+uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags);
+uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP,
+        uint32_t dstIP, uint16_t sport, uint16_t dport, size_t data_size,
+        uint8_t output_port);
+void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt);
+void send_batch(struct rte_mbuf **mbufs, int count, int port_id);
+
+
 
 #ifdef __cplusplus
 }
