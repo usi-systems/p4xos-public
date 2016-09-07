@@ -58,6 +58,8 @@
 
 static uint32_t cur_inst;
 
+enum PAXOS_TEST { PROPOSER, COORDINATOR, ACCEPTOR, LEARNER };
+
 static const struct rte_eth_conf port_conf_default = {
         .rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN }
 };
@@ -67,8 +69,26 @@ static struct rte_timer timer;
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
 static void
-generate_packets(struct rte_mbuf **bufs, unsigned nb_tx)
+generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t)
 {
+    uint16_t dport;
+    switch(t) {
+        case PROPOSER:
+            dport = PROPOSER_PORT;
+            break;
+        case COORDINATOR:
+            dport = COORDINATOR_PORT;
+            break;
+        case ACCEPTOR:
+            dport = ACCEPTOR_PORT;
+            break;
+        case LEARNER:
+            dport = LEARNER_PORT;
+            break;
+        default:
+            dport = 11111;
+    }
+
     char str[] = "Hello";
     struct paxos_accepted accepted = {
         .iid = 1,
@@ -82,7 +102,10 @@ generate_packets(struct rte_mbuf **bufs, unsigned nb_tx)
     pm.u.accepted = accepted;
 	unsigned i;
 	for (i = 0; i < nb_tx; i++) {
-	    add_paxos_message(&pm, bufs[i], 12345, LEARNER_PORT);
+        /* Learner test */
+        // add_paxos_message(&pm, bufs[i], 12345, LEARNER_PORT);
+        /* Coordinator test */
+	    add_paxos_message(&pm, bufs[i], 12345, dport);
         pm.u.accepted.iid = cur_inst;
         rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
             "submit instance %u\n", cur_inst);
@@ -94,13 +117,46 @@ static int
 send_initial_packets(void *arg)
 {
     int ret;
+    /* TODO: make PAXOS_TEST as parameter */
+    enum PAXOS_TEST t = COORDINATOR;
+
     struct rte_mempool *mbuf_pool = (struct rte_mempool*) arg;
-    struct rte_mbuf *bufs[TX_RING_SIZE];
-    ret = rte_pktmbuf_alloc_bulk(mbuf_pool, bufs, TX_RING_SIZE);
+    struct rte_mbuf *bufs[BURST_SIZE];
+    ret = rte_pktmbuf_alloc_bulk(mbuf_pool, bufs, BURST_SIZE);
     while(1)
-        generate_packets(bufs, TX_RING_SIZE);
+        generate_packets(bufs, BURST_SIZE, t);
     return ret;
 }
+
+static int
+hexdump_paxos_hdr(struct rte_mbuf *created_pkt)
+{
+    size_t paxos_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
+                        sizeof(struct udp_hdr);
+    struct paxos_hdr *px = rte_pktmbuf_mtod_offset(created_pkt,
+                                struct paxos_hdr *, paxos_offset);
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "paxos", px, sizeof(struct paxos_hdr));
+}
+
+
+static uint16_t __attribute((unused))
+check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+        struct rte_mbuf **pkts, uint16_t nb_pkts,
+        uint16_t max_pkts __rte_unused, void *user_param __rte_unused)
+{
+    uint64_t cycles = 0;
+    uint64_t now = rte_rdtsc();
+    unsigned i;
+
+    for (i = 0; i < nb_pkts; i++) {
+        cycles += now - pkts[i]->udata64;
+        hexdump_paxos_hdr(pkts[i]);
+    }
+
+    return nb_pkts;
+};
+
 
 /*
  * Initializes a given port using global settings and with the RX buffers
@@ -139,6 +195,9 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
             return retval;
     /* Enable RX in promiscuous mode for the Ethernet device. */
     rte_eth_promiscuous_enable(port);
+
+    rte_eth_add_rx_callback(port, 0, check_return, NULL);
+
     return 0;
 }
 /*
