@@ -33,12 +33,6 @@ static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
 
-static uint64_t TIMER_RESOLUTION_CYCLES;
-static struct {
-	uint64_t total_cycles;
-	uint64_t total_pkts;
-} latency_numbers;
-
 static const struct ether_addr ether_multicast = {
     .addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
 };
@@ -227,36 +221,6 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 	return nb_pkts;
 }
 
-
-static uint16_t
-calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
-		struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
-{
-	uint64_t cycles = 0;
-	uint64_t now = rte_rdtsc();
-	unsigned i;
-
-	for (i = 0; i < nb_pkts; i++) {
-		cycles += now - pkts[i]->udata64;
-		/*
-		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
-				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
-				latency_numbers.total_pkts, cycles);
-		*/
-	}
-
-	latency_numbers.total_cycles += cycles;
-	latency_numbers.total_pkts += nb_pkts;
-
-	if (latency_numbers.total_pkts > (100 * 1000 * 1000ULL)) {
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-		"Latency = %"PRIu64" cycles\n",
-		latency_numbers.total_cycles / latency_numbers.total_pkts);
-		latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
-	}
-
-	return nb_pkts;
-};
 
 static inline int
 port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct proposer* proposer)
