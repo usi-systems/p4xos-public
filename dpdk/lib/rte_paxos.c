@@ -2,9 +2,16 @@
 #include <rte_ethdev.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
-
+#include <rte_cycles.h>
+#include <rte_timer.h>
 #include "rte_paxos.h"
 #include "const.h"
+
+struct {
+    uint64_t total_cycles;
+    uint64_t total_pkts;
+} latency_numbers;
+
 
 void print_paxos_hdr(struct paxos_hdr *p)
 {
@@ -61,7 +68,8 @@ uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_
     return ol_flags;
 }
 
-void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt)
+void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
+                        uint16_t sport, uint16_t dport)
 {
     uint8_t port_id = 0;
     // struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
@@ -69,7 +77,7 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt)
     created_pkt->l3_len = sizeof(struct ipv4_hdr);
     created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
     uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95),
-                        IPv4(239,3,29,73), PROPOSER_PORT, ACCEPTOR_PORT,
+                        IPv4(239,3,29,73), sport, dport,
                         sizeof(struct paxos_message), port_id);
     size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
     size_t paxos_offset = udp_offset + sizeof(struct udp_hdr);
@@ -92,4 +100,48 @@ void send_batch(struct rte_mbuf **mbufs, int count, int port_id)
         nb_tx = rte_eth_tx_burst(port_id, 0, mbufs, count);
         rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d messages\n", nb_tx);
     } while (nb_tx == count);
+}
+
+uint16_t calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+        struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
+{
+    uint64_t cycles = 0;
+    uint64_t now = rte_rdtsc();
+    unsigned i;
+
+    for (i = 0; i < nb_pkts; i++) {
+        cycles += now - pkts[i]->udata64;
+    }
+
+    latency_numbers.total_cycles += cycles;
+    latency_numbers.total_pkts += nb_pkts;
+
+    if (latency_numbers.total_pkts > (100 * 1000 * 1000ULL)) {
+        rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
+        "Latency = %"PRIu64" cycles\n",
+        latency_numbers.total_cycles / latency_numbers.total_pkts);
+        latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
+    }
+    return nb_pkts;
+}
+
+int
+check_timer_expiration(__attribute__((unused)) void *arg)
+{
+    uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
+    unsigned lcore_id;
+
+    lcore_id = rte_lcore_id();
+
+    rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
+            "Starting %s on core %u\n", __func__, lcore_id);
+
+    while(1) {
+        cur_tsc = rte_rdtsc();
+        diff_tsc = cur_tsc - prev_tsc;
+        if (diff_tsc > TIMER_RESOLUTION_CYCLES) {
+            rte_timer_manage();
+            prev_tsc = cur_tsc;
+        }
+    }
 }

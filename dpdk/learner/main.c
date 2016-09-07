@@ -27,8 +27,6 @@
 #include "const.h"
 #include "utils.h"
 
-static unsigned nb_ports;
-static uint64_t TIMER_RESOLUTION_CYCLES;
 
 /* learner timer for deliver */
 static struct rte_timer deliver_timer;
@@ -42,12 +40,6 @@ static const struct rte_eth_conf port_conf_default = {
 static const struct ether_addr ether_multicast = {
 	.addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
 };
-
-
-static struct {
-	uint64_t total_cycles;
-	uint64_t total_pkts;
-} latency_numbers;
 
 
 struct rte_mempool *mbuf_pool;
@@ -105,53 +97,22 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 
 static uint16_t
 add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
-		struct rte_mbuf **pkts, uint16_t nb_pkts,
-		uint16_t max_pkts __rte_unused, void *user_param)
+        struct rte_mbuf **pkts, uint16_t nb_pkts,
+        uint16_t max_pkts __rte_unused, void *user_param)
 {
-	struct learner* learner = (struct learner *)user_param;
-	unsigned i;
-	uint64_t now = rte_rdtsc();
+    struct learner* learner = (struct learner *)user_param;
+    unsigned i;
+    uint64_t now = rte_rdtsc();
 
-	for (i = 0; i < nb_pkts; i++) {
-		pkts[i]->udata64 = now;
-		paxos_rx_process(pkts[i], learner);
-	}
-
-
-	return nb_pkts;
+    for (i = 0; i < nb_pkts; i++) {
+        pkts[i]->udata64 = now;
+        paxos_rx_process(pkts[i], learner);
+    }
+    return nb_pkts;
 }
 
-
-static uint16_t
-calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
-		struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
-{
-	uint64_t cycles = 0;
-	uint64_t now = rte_rdtsc();
-	unsigned i;
-
-	for (i = 0; i < nb_pkts; i++) {
-		cycles += now - pkts[i]->udata64;
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-				"Packet%"PRIu64", Latency = %"PRIu64" cycles\n",
-				latency_numbers.total_pkts, cycles);
-	}
-
-	latency_numbers.total_cycles += cycles;
-	latency_numbers.total_pkts += nb_pkts;
-
-	if (latency_numbers.total_pkts > (100 * 1000 * 1000ULL)) {
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-		"Latency = %"PRIu64" cycles\n",
-		latency_numbers.total_cycles / latency_numbers.total_pkts);
-		latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
-	}
-
-	return nb_pkts;
-};
-
 static inline int
-port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct learner* learner)
+port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
 {
 	struct rte_eth_dev_info dev_info;
 	struct rte_eth_txconf *txconf;
@@ -193,59 +154,46 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct learner* learner)
 	if (retval < 0)
 		return retval;
 
-	struct ether_addr addr;
-	rte_eth_macaddr_get(port, &addr);
-	printf("Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
-			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
-			(unsigned) port,
-			addr.addr_bytes[0], addr.addr_bytes[1],
-			addr.addr_bytes[2], addr.addr_bytes[3],
-			addr.addr_bytes[4], addr.addr_bytes[5]);
-
 	rte_eth_promiscuous_enable(port);
 
-	rte_eth_add_rx_callback(port, 0, add_timestamps, learner);
-	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
+	rte_eth_add_rx_callback(port, 0, add_timestamps, user_param);
+	rte_eth_add_tx_callback(port, 0, calc_latency, user_param);
 	return 0;
 }
 
 
 static void
-lcore_main(void)
+lcore_main(uint8_t port)
 {
-	uint8_t port;
 
-	for (port = 0; port < nb_ports; port++)
-		if (rte_eth_dev_socket_id(port) > 0 &&
-				rte_eth_dev_socket_id(port) !=
-					(int) rte_socket_id())
-			rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-					"WARNING, port %u is on retmote NUMA node to "
-					"polling thread.\nPerformance will "
-					"not be optimal.\n", port);
+	if (rte_eth_dev_socket_id(port) > 0 &&
+			rte_eth_dev_socket_id(port) !=
+				(int) rte_socket_id())
+		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
+				"WARNING, port %u is on retmote NUMA node to "
+				"polling thread.\nPerformance will "
 
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. [Ctrl+C to quit]\n",
-			rte_lcore_id());
-
+				"not be optimal.\n", port);
+	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. "
+				"[Ctrl+C to quit]\n", rte_lcore_id());
 
 	for (;;) {
 		// Check if signal is received
 		if (force_quit)
 			break;
 
-		for (port = 0; port < nb_ports; port++) {
-			struct rte_mbuf *bufs[BURST_SIZE];
-			const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
-			if (unlikely(nb_rx == 0))
-				continue;
-			const uint16_t nb_tx = rte_eth_tx_burst(port, 0,
-					bufs, nb_rx);
-			if (unlikely(nb_tx < nb_rx)) {
-				uint16_t buf;
+		struct rte_mbuf *bufs[BURST_SIZE];
+		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+		if (unlikely(nb_rx == 0))
+			continue;
+        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
 
-				for (buf = nb_tx; buf < nb_rx; buf++)
-					rte_pktmbuf_free(bufs[buf]);
-			}
+		const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
+		if (unlikely(nb_tx < nb_rx)) {
+			uint16_t buf;
+
+			for (buf = nb_tx; buf < nb_rx; buf++)
+				rte_pktmbuf_free(bufs[buf]);
 		}
 	}
 }
@@ -258,39 +206,17 @@ check_deliver(struct rte_timer *tim,
 	struct learner* l = (struct learner *) arg;
 	unsigned lcore_id = rte_lcore_id();
 
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n",
+			__func__, lcore_id);
 
 	struct paxos_accepted out;
 	int consensus = learner_deliver_next(l, &out);
 	if (consensus)
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8, "consensus reached: %d\n", consensus);
+		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8, "consensus reached: %d\n",
+			consensus);
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
-}
-
-
-
-static void
-send_repeat_message(paxos_message *pm) {
-	uint8_t port_id = 0;
-	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
-	created_pkt->l2_len = sizeof(struct ether_hdr);
-	created_pkt->l3_len = sizeof(struct ipv4_hdr);
-	created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(paxos_message);
-	uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
-			LEARNER_PORT, ACCEPTOR_PORT, sizeof(paxos_message), port_id);
-	//struct udp_hdr *udp;
-	size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
-	//udp  = rte_pktmbuf_mtod_offset(created_pkt, struct udp_hdr *, udp_offset);
-	size_t paxos_offset = udp_offset + sizeof(struct udp_hdr);
-	paxos_message *px = rte_pktmbuf_mtod_offset(created_pkt, paxos_message *, paxos_offset);
-	rte_memcpy(px, pm, sizeof(*pm));	
-	//udp->dgram_cksum = get_psd_sum(udp, ETHER_TYPE_IPv4, ol_flags);
-	created_pkt->ol_flags = ol_flags;
-	const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
-	rte_pktmbuf_free(created_pkt);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d repeated messages\n", nb_tx);
 }
 
 static void
@@ -299,7 +225,10 @@ check_holes(struct rte_timer *tim, void *arg)
 	struct learner *l = (struct learner *) arg;
 	unsigned lcore_id = rte_lcore_id();
 
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n", __func__, lcore_id);
+	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n",
+				__func__, lcore_id);
+
+	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
 
 	paxos_repeat repeat;
 	unsigned chunks = 10;
@@ -312,33 +241,12 @@ check_holes(struct rte_timer *tim, void *arg)
 			.type = PAXOS_REPEAT,
 			.u.repeat = repeat,
 		};
-		send_repeat_message(&repeat_msg);
+		add_paxos_message(&repeat_msg, created_pkt, LEARNER_PORT, ACCEPTOR_PORT);
 	}
 
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
-}
-
-static __attribute__((noreturn)) int
-lcore_mainloop(__attribute__((unused)) void *arg)
-{
-	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
-	unsigned lcore_id;
-
-	lcore_id = rte_lcore_id();
-
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
-			"Starting mainloop on core %u\n", lcore_id);
-
-	while(1) {
-		cur_tsc = rte_rdtsc();
-		diff_tsc = cur_tsc - prev_tsc;
-		if (diff_tsc > TIMER_RESOLUTION_CYCLES) {
-			rte_timer_manage();
-			prev_tsc = cur_tsc;
-		}
-	}
 }
 
 int
@@ -356,11 +264,12 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
-
-	nb_ports = rte_eth_dev_count();
+	if (rte_get_log_level() == RTE_LOG_DEBUG) {
+		paxos_config.verbosity = PAXOS_LOG_DEBUG;
+	}
 
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
-			NUM_MBUFS * nb_ports, MBUF_CACHE_SIZE, 0,
+			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
 			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
 	if (mbuf_pool == NULL)
@@ -388,23 +297,18 @@ main(int argc, char *argv[])
 	lcore_id = rte_get_next_lcore(master_core, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
 	rte_timer_reset(&deliver_timer, hz, PERIODICAL, lcore_id, check_deliver, learner);
+	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
 	/* slave core */
 	lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
 	rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, learner);
+	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
-	for (portid = 0; portid < nb_ports; portid++)
-		if (port_init(portid, mbuf_pool, learner) != 0)
+	if (port_init(portid, mbuf_pool, learner) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
-
-	/* start mainloop on every lcore */
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
-		rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
-	}
-
-	lcore_main();
+	lcore_main(portid);
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "free learner\n");
 	learner_free(learner);

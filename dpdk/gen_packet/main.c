@@ -56,8 +56,6 @@
 #include "rte_paxos.h"
 #include "const.h"
 
-static uint64_t CYCLES_PER_SECOND;
-
 static uint32_t cur_inst;
 
 static const struct rte_eth_conf port_conf_default = {
@@ -68,40 +66,42 @@ static struct rte_timer timer;
 
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
-// #define MEASUREMENT_PERIOD 5
-// static uint32_t total_tp;
-// static uint32_t at_second;
-
-static int
-generate_packets(__attribute__((unused)) void *arg)
+static void
+generate_packets(struct rte_mbuf **bufs, unsigned nb_tx)
 {
-        int ret;
-        unsigned lcore_id;
-        struct rte_mempool *mbuf_pool = (struct rte_mempool*) arg;
-        struct paxos_accept accept = {
-            .iid = (cur_inst++),
-            .ballot = (1),
-            .value_ballot = (1),
-            .aid = 0,
-            .value = {0, NULL},
-        };
-        struct paxos_message pm;
-        pm.type = (PAXOS_PREPARE);
-        pm.u.accept = accept;
-        lcore_id = rte_lcore_id();
-        printf("%s on core %u\n", __func__, lcore_id);
-        struct rte_mbuf *bufs[BURST_SIZE];
-        ret = rte_pktmbuf_alloc_bulk(mbuf_pool, bufs, BURST_SIZE);
-	while (1) {
-        	unsigned i;
-        	for (i = 0; i < BURST_SIZE; i++)
-        	    add_paxos_message(&pm, bufs[i]);
-        	send_batch(bufs, BURST_SIZE, 0);
-	}
-        return ret;
+    char str[] = "Hello";
+    struct paxos_accepted accepted = {
+        .iid = 1,
+        .ballot = 1,
+        .value_ballot = 1,
+        .aid = 0,
+        .value = {sizeof(str), str},
+    };
+    struct paxos_message pm;
+    pm.type = (PAXOS_ACCEPTED);
+    pm.u.accepted = accepted;
+	unsigned i;
+	for (i = 0; i < nb_tx; i++) {
+	    add_paxos_message(&pm, bufs[i], 12345, LEARNER_PORT);
+        pm.u.accepted.iid = cur_inst;
+        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
+            "submit instance %u\n", cur_inst);
+    }
+	send_batch(bufs, nb_tx, 0);
 }
 
-/* basicfwd.c: Basic DPDK skeleton forwarding example. */
+static int
+send_initial_packets(void *arg)
+{
+    int ret;
+    struct rte_mempool *mbuf_pool = (struct rte_mempool*) arg;
+    struct rte_mbuf *bufs[TX_RING_SIZE];
+    ret = rte_pktmbuf_alloc_bulk(mbuf_pool, bufs, TX_RING_SIZE);
+    while(1)
+        generate_packets(bufs, TX_RING_SIZE);
+    return ret;
+}
+
 /*
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
@@ -109,73 +109,72 @@ generate_packets(__attribute__((unused)) void *arg)
 static inline int
 port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 {
-        struct rte_eth_conf port_conf = port_conf_default;
-        const uint16_t rx_rings = 1, tx_rings = 1;
-        int retval;
-        uint16_t q;
-        if (port >= rte_eth_dev_count())
-                return -1;
-        /* Configure the Ethernet device. */
-        retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
-        if (retval != 0)
-                return retval;
-        /* Allocate and set up 1 RX queue per Ethernet port. */
-        for (q = 0; q < rx_rings; q++) {
-                retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
-                                rte_eth_dev_socket_id(port), NULL, mbuf_pool);
-                if (retval < 0)
-                        return retval;
-        }
-        /* Allocate and set up 1 TX queue per Ethernet port. */
-        for (q = 0; q < tx_rings; q++) {
-                retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
-                                rte_eth_dev_socket_id(port), NULL);
-                if (retval < 0)
-                        return retval;
-        }
-        /* Start the Ethernet port. */
-        retval = rte_eth_dev_start(port);
-        if (retval < 0)
-                return retval;
-        /* Enable RX in promiscuous mode for the Ethernet device. */
-        rte_eth_promiscuous_enable(port);
-        return 0;
+    struct rte_eth_conf port_conf = port_conf_default;
+    const uint16_t rx_rings = 1, tx_rings = 1;
+    int retval;
+    uint16_t q;
+    if (port >= rte_eth_dev_count())
+            return -1;
+    /* Configure the Ethernet device. */
+    retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
+    if (retval != 0)
+            return retval;
+    /* Allocate and set up 1 RX queue per Ethernet port. */
+    for (q = 0; q < rx_rings; q++) {
+            retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
+                            rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+            if (retval < 0)
+                    return retval;
+    }
+    /* Allocate and set up 1 TX queue per Ethernet port. */
+    for (q = 0; q < tx_rings; q++) {
+            retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
+                            rte_eth_dev_socket_id(port), NULL);
+            if (retval < 0)
+                    return retval;
+    }
+    /* Start the Ethernet port. */
+    retval = rte_eth_dev_start(port);
+    if (retval < 0)
+            return retval;
+    /* Enable RX in promiscuous mode for the Ethernet device. */
+    rte_eth_promiscuous_enable(port);
+    return 0;
 }
 /*
  * The lcore main. This is the main thread that does the work, reading from
  * an input port and writing to an output port.
  */
 static void
-lcore_main(void)
+lcore_main(uint8_t port)
 {
-        uint8_t port = 0;
-        /*
-         * Check that the port is on the same NUMA node as the polling thread
-         * for best performance.
-         */
-        if (rte_eth_dev_socket_id(port) > 0 &&
-                                rte_eth_dev_socket_id(port) !=
-                                                (int)rte_socket_id())
-                printf("WARNING, port %u is on remote NUMA node to "
-                                        "polling thread.\n\tPerformance will "
-                                        "not be optimal.\n", port);
-        printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
-                        rte_lcore_id());
-        /* Run until the application is quit or killed. */
-        for (;;) {
-		if (force_quit)
-			break;
-                 struct rte_mbuf *bufs[BURST_SIZE];
-                 const uint16_t nb_rx = rte_eth_rx_burst(port, 0,
-                                 bufs, BURST_SIZE);
-                rte_atomic32_add(&counter, nb_rx);
-                 if (unlikely(nb_rx == 0))
-                         continue;
-                 /* Free packets. */
-                 uint16_t buf;
-                 for (buf = 0; buf < nb_rx; buf++)
-                         rte_pktmbuf_free(bufs[buf]);
-        }
+    /*
+     * Check that the port is on the same NUMA node as the polling thread
+     * for best performance.
+     */
+    if (rte_eth_dev_socket_id(port) > 0 &&
+                rte_eth_dev_socket_id(port) !=
+                (int)rte_socket_id())
+            printf("WARNING, port %u is on remote NUMA node to "
+                    "polling thread.\n\tPerformance will "
+                    "not be optimal.\n", port);
+
+    printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n", rte_lcore_id());
+    /* Run until the application is quit or killed. */
+    for (;;) {
+        if (force_quit)
+            break;
+        struct rte_mbuf *bufs[BURST_SIZE];
+        uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+        rte_atomic32_add(&counter, nb_rx);
+         if (unlikely(nb_rx == 0))
+                continue;
+        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
+        /* Free packets. */
+        uint16_t idx;
+        for (idx = 0; idx < nb_rx; idx++)
+            rte_pktmbuf_free(bufs[idx]);
+    }
 }
 
 static void
@@ -183,42 +182,12 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
     rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
             "%s on core %d\n", __func__, rte_lcore_id());
+
     int count = rte_atomic32_read(&counter);
-    // total_tp += count;
-    rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
-                "%8"PRIu32 "\n", count);
+    rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER, "%8d\n", count);
     rte_atomic32_set(&counter, 0);
-    /*
-    if (at_second == MEASUREMENT_PERIOD) {
-        rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
-                    "%8d \n", total_tp / MEASUREMENT_PERIOD);
-        total_tp = 0;
-        at_second = 0;
-    } else
-        at_second++;
-    */
 	if (force_quit)
 		rte_timer_stop(tim);
-}
-
-static __attribute((noreturn)) int
-lcore_mainloop(__attribute((unused)) void *arg)
-{
-	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
-	unsigned lcore_id;
-
-	lcore_id = rte_lcore_id();
-
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER,
-		"Starting mainloop on core %u\n", lcore_id);
-	while(1) {
-		cur_tsc = rte_rdtsc();
-		diff_tsc = cur_tsc - prev_tsc;
-		if (diff_tsc > CYCLES_PER_SECOND) {
-			rte_timer_manage();
-			prev_tsc = cur_tsc;
-		}
-	}
 }
 
 static void
@@ -238,49 +207,49 @@ signal_handler(int signum)
 int
 main(int argc, char *argv[])
 {
-        struct rte_mempool *mbuf_pool;
-        unsigned master_core, lcore_id;
-        uint8_t portid = 0;
-    	force_quit = false;
-        cur_inst = 0;
-        /* Initialize the Environment Abstraction Layer (EAL). */
-        int ret = rte_eal_init(argc, argv);
-        if (ret < 0)
-                rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+    struct rte_mempool *mbuf_pool;
+    unsigned master_core, lcore_id;
+    uint8_t portid = 0;
+	force_quit = false;
+    /* Learner's instance starts at 1 */
+    cur_inst = 1;
+    /* Initialize the Environment Abstraction Layer (EAL). */
+    int ret = rte_eal_init(argc, argv);
+    if (ret < 0)
+        rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
 	rte_timer_init(&timer);
     uint64_t hz = rte_get_timer_hz();
     /* increase call frequency to rte_timer_manage() to increase the precision */
-    CYCLES_PER_SECOND = hz / 100;
+    TIMER_RESOLUTION_CYCLES = hz / 100;
     rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
             "1 cycle is %3.2f ns\n", 1E9 / (double)hz);
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
-        /* Creates a new mempool in memory to hold the mbufs. */
-        mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS,
-                MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-        if (mbuf_pool == NULL)
-                rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
-        /* Initialize port 0. */
-        if (port_init(portid, mbuf_pool) != 0)
-                rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
+    /* Creates a new mempool in memory to hold the mbufs. */
+    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS,
+            MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (mbuf_pool == NULL)
+            rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
+    /* Initialize port 0. */
+    if (port_init(portid, mbuf_pool) != 0)
+            rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
-        /* master core */
-        master_core = rte_lcore_id();
-        /* slave core */
-        lcore_id = rte_get_next_lcore(master_core, 0, 1);
+    /* master core */
+    master_core = rte_lcore_id();
+    /* slave core */
+    lcore_id = rte_get_next_lcore(master_core, 0, 1);
 	rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
 	rte_timer_subsystem_init();
-	rte_eal_remote_launch(lcore_mainloop, NULL, lcore_id);
+	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
-        /* slave core */
-        lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
-	rte_eal_remote_launch(generate_packets, mbuf_pool, lcore_id);
+    /* slave core */
+    lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
+	rte_eal_remote_launch(send_initial_packets, mbuf_pool, lcore_id);
 
-
-        /* Call lcore_main on the master core only. */
-        lcore_main();
-        return 0;
+    /* Call lcore_main on the master core only. */
+    lcore_main(portid);
+    return 0;
 }

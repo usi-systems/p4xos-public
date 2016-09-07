@@ -11,6 +11,7 @@
 extern "C" {
 #endif
 
+uint64_t TIMER_RESOLUTION_CYCLES;
 struct paxos_hdr {
 	uint16_t msgtype;
 	uint32_t inst;
@@ -26,9 +27,12 @@ uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags);
 uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP,
         uint32_t dstIP, uint16_t sport, uint16_t dport, size_t data_size,
         uint8_t output_port);
-void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt);
+void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
+                        uint16_t sport, uint16_t dport);
 void send_batch(struct rte_mbuf **mbufs, int count, int port_id);
-
+uint16_t calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+        struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused);
+int check_timer_expiration(__attribute__((unused)) void *arg);
 
 
 #ifdef __cplusplus
