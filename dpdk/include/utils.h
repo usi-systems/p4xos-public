@@ -5,6 +5,13 @@
 #include <rte_ether.h>
 #include "rte_paxos.h"
 
+/* Macros for printing using RTE_LOG */
+#define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
+#define FATAL_ERROR(fmt, args...)       rte_exit(EXIT_FAILURE, fmt "\n", ##args)
+#define PRINT_INFO(fmt, args...)        RTE_LOG(INFO, APP, fmt "\n", ##args)
+#define PRINT_DEBUG(fmt, args...)       RTE_LOG(DEBUG, APP, fmt "\n", ##args)
+
+
 union tunnel_offload_info {
 	uint64_t data;
 	struct {
@@ -17,7 +24,7 @@ union tunnel_offload_info {
 	};
 } __rte_cache_aligned;
 
+void signal_handler(int signum);
 void parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 		uint8_t *l4_proto);
-void signal_handler(int signum);
 #endif

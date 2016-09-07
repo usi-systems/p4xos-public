@@ -55,10 +55,15 @@
 #include "paxos.h"
 #include "rte_paxos.h"
 #include "const.h"
+#include "utils.h"
+#include "args.h"
 
-static uint32_t cur_inst;
 
-enum PAXOS_TEST { PROPOSER, COORDINATOR, ACCEPTOR, LEARNER };
+struct client {
+    enum PAXOS_TEST test;
+    struct rte_mempool *mbuf_pool;
+    uint32_t cur_inst;
+};
 
 static const struct rte_eth_conf port_conf_default = {
         .rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN }
@@ -69,7 +74,7 @@ static struct rte_timer timer;
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
 static void
-generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t)
+generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t, int cur_inst)
 {
     uint16_t dport;
     switch(t) {
@@ -107,8 +112,7 @@ generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t)
         /* Coordinator test */
 	    add_paxos_message(&pm, bufs[i], 12345, dport);
         pm.u.accepted.iid = cur_inst;
-        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
-            "submit instance %u\n", cur_inst);
+        PRINT_DEBUG("submit instance %u", cur_inst);
     }
 	send_batch(bufs, nb_tx, 0);
 }
@@ -117,14 +121,12 @@ static int
 send_initial_packets(void *arg)
 {
     int ret;
-    /* TODO: make PAXOS_TEST as parameter */
-    enum PAXOS_TEST t = COORDINATOR;
 
-    struct rte_mempool *mbuf_pool = (struct rte_mempool*) arg;
+    struct client *client = (struct client*) arg;
     struct rte_mbuf *bufs[BURST_SIZE];
-    ret = rte_pktmbuf_alloc_bulk(mbuf_pool, bufs, BURST_SIZE);
+    ret = rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, BURST_SIZE);
     while(1)
-        generate_packets(bufs, BURST_SIZE, t);
+        generate_packets(bufs, BURST_SIZE, client->test, client->cur_inst);
     return ret;
 }
 
@@ -226,9 +228,9 @@ lcore_main(uint8_t port)
         struct rte_mbuf *bufs[BURST_SIZE];
         uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
         rte_atomic32_add(&counter, nb_rx);
-         if (unlikely(nb_rx == 0))
+        if (unlikely(nb_rx == 0))
                 continue;
-        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
+        PRINT_DEBUG("Received %8d packets", nb_rx);
         /* Free packets. */
         uint16_t idx;
         for (idx = 0; idx < nb_rx; idx++)
@@ -239,24 +241,13 @@ lcore_main(uint8_t port)
 static void
 report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
-    rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
-            "%s on core %d\n", __func__, rte_lcore_id());
+    PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
 
     int count = rte_atomic32_read(&counter);
-    rte_log(RTE_LOG_INFO, RTE_LOGTYPE_TIMER, "%8d\n", count);
+    PRINT_INFO("%8d", count);
     rte_atomic32_set(&counter, 0);
 	if (force_quit)
 		rte_timer_stop(tim);
-}
-
-static void
-signal_handler(int signum)
-{
-	if (signum == SIGINT || signum == SIGTERM) {
-		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
-		"\n\nSignal %d received, preparing to exit...\n", signum);
-		force_quit = true;
-	}
 }
 
 /*
@@ -266,34 +257,40 @@ signal_handler(int signum)
 int
 main(int argc, char *argv[])
 {
-    struct rte_mempool *mbuf_pool;
     unsigned master_core, lcore_id;
     uint8_t portid = 0;
 	force_quit = false;
     /* Learner's instance starts at 1 */
-    cur_inst = 1;
     /* Initialize the Environment Abstraction Layer (EAL). */
     int ret = rte_eal_init(argc, argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+    argc -= ret;
+    argv += ret;
+
+    parse_args(argc, argv);
+
+    struct client client;
+    client.test = client_config.test;
+    client.cur_inst = 1;
+
 	rte_timer_init(&timer);
     uint64_t hz = rte_get_timer_hz();
     /* increase call frequency to rte_timer_manage() to increase the precision */
     TIMER_RESOLUTION_CYCLES = hz / 100;
-    rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-            "1 cycle is %3.2f ns\n", 1E9 / (double)hz);
+    PRINT_INFO("1 cycle is %3.2f ns", 1E9 / (double)hz);
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
     /* Creates a new mempool in memory to hold the mbufs. */
-    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS,
+    client.mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS,
             MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-    if (mbuf_pool == NULL)
+    if (client.mbuf_pool == NULL)
             rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
     /* Initialize port 0. */
-    if (port_init(portid, mbuf_pool) != 0)
+    if (port_init(portid, client.mbuf_pool) != 0)
             rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
     /* master core */
@@ -306,7 +303,7 @@ main(int argc, char *argv[])
 
     /* slave core */
     lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
-	rte_eal_remote_launch(send_initial_packets, mbuf_pool, lcore_id);
+	rte_eal_remote_launch(send_initial_packets, &client, lcore_id);
 
     /* Call lcore_main on the master core only. */
     lcore_main(portid);

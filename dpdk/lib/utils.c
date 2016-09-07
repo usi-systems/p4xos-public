@@ -46,8 +46,7 @@ parse_ethernet(struct ether_hdr *eth_hdr, union tunnel_offload_info *info,
 	}
 }
 
-void
-signal_handler(int signum)
+void signal_handler(int signum)
 {
 	if (signum == SIGINT || signum == SIGTERM) {
 		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,

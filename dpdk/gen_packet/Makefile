@@ -45,8 +45,11 @@ APP = client
 # all source are stored in SRCS-y
 SRCS-y := main.c
 SRCS-y += rte_paxos.c
+SRCS-y += utils.c
+SRCS-y += args.c
 
 CFLAGS += -I$(PWD)/../include
+CFLAGS += -I$(PWD)
 LDFLAGS += -L$(PWD)/../lib
 LDLIBS += -lpaxos
 
