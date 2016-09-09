@@ -8,6 +8,7 @@ enum PAXOS_TEST { PROPOSER, COORDINATOR, ACCEPTOR, LEARNER };
 
 struct {
     enum PAXOS_TEST test;
+    int period;
 } client_config;
 
 void print_usage(const char *prgname);

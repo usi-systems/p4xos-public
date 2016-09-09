@@ -34,6 +34,7 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <errno.h>
 /* dpdk */
 #include <rte_eal.h>
 #include <rte_ethdev.h>
@@ -41,6 +42,7 @@
 #include <rte_lcore.h>
 #include <rte_mbuf.h>
 #include <rte_timer.h>
+#include <rte_errno.h>
 /* librte_net */
 #include <rte_ether.h>
 #include <rte_ip.h>
@@ -59,6 +61,8 @@
 #include "args.h"
 
 
+#define BURST_TX_DRAIN_US 1 /* TX drain every ~1us */
+
 struct client {
     enum PAXOS_TEST test;
     struct rte_mempool *mbuf_pool;
@@ -74,7 +78,8 @@ static struct rte_timer timer;
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
 static void
-generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t, int cur_inst)
+generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
+    struct rte_eth_dev_tx_buffer *buffer, enum PAXOS_TEST t, int cur_inst)
 {
     uint16_t dport;
     switch(t) {
@@ -107,27 +112,19 @@ generate_packets(struct rte_mbuf **bufs, unsigned nb_tx, enum PAXOS_TEST t, int 
     pm.u.accepted = accepted;
 	unsigned i;
 	for (i = 0; i < nb_tx; i++) {
-        /* Learner test */
-        // add_paxos_message(&pm, bufs[i], 12345, LEARNER_PORT);
-        /* Coordinator test */
-	    add_paxos_message(&pm, bufs[i], 12345, dport);
+	    add_paxos_message(&pm, pkts_burst[i], 12345, dport);
         pm.u.accepted.iid = cur_inst;
+        rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
         PRINT_DEBUG("submit instance %u", cur_inst);
     }
-	send_batch(bufs, nb_tx, 0);
 }
 
 static int
-send_initial_packets(void *arg)
+send_packets(struct client *client, struct rte_eth_dev_tx_buffer *buffer, int nb_tx)
 {
-    int ret;
-
-    struct client *client = (struct client*) arg;
-    struct rte_mbuf *bufs[BURST_SIZE];
-    ret = rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, BURST_SIZE);
-    while(1)
-        generate_packets(bufs, BURST_SIZE, client->test, client->cur_inst);
-    return ret;
+    struct rte_mbuf *bufs[nb_tx];
+    rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, nb_tx);
+    generate_packets(bufs, nb_tx, buffer, client->test, client->cur_inst);
 }
 
 static int
@@ -180,17 +177,18 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     /* Allocate and set up 1 RX queue per Ethernet port. */
     for (q = 0; q < rx_rings; q++) {
             retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
-                            rte_eth_dev_socket_id(port), NULL, mbuf_pool);
+                            rte_eth_dev_socket_id(port), 0, mbuf_pool);
             if (retval < 0)
                     return retval;
     }
     /* Allocate and set up 1 TX queue per Ethernet port. */
     for (q = 0; q < tx_rings; q++) {
             retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
-                            rte_eth_dev_socket_id(port), NULL);
+                            rte_eth_dev_socket_id(port), 0);
             if (retval < 0)
-                    return retval;
+                return retval;
     }
+
     /* Start the Ethernet port. */
     retval = rte_eth_dev_start(port);
     if (retval < 0)
@@ -207,44 +205,47 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
  * an input port and writing to an output port.
  */
 static void
-lcore_main(uint8_t port)
+lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *buffer)
 {
-    /*
-     * Check that the port is on the same NUMA node as the polling thread
-     * for best performance.
-     */
-    if (rte_eth_dev_socket_id(port) > 0 &&
-                rte_eth_dev_socket_id(port) !=
-                (int)rte_socket_id())
-            printf("WARNING, port %u is on remote NUMA node to "
-                    "polling thread.\n\tPerformance will "
-                    "not be optimal.\n", port);
+    struct rte_mbuf *pkts_burst[BURST_SIZE];
+    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    unsigned i, nb_rx;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
+            BURST_TX_DRAIN_US;
 
-    printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n", rte_lcore_id());
+    prev_tsc = 0;
+
     /* Run until the application is quit or killed. */
-    for (;;) {
-        if (force_quit)
-            break;
-        struct rte_mbuf *bufs[BURST_SIZE];
-        uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+    while (!force_quit) {
+
+        cur_tsc = rte_rdtsc();
+        /* TX burst queue drain */
+        diff_tsc = cur_tsc - prev_tsc;
+        if (unlikely(diff_tsc > drain_tsc)) {
+            rte_eth_tx_buffer_flush(port, 0, buffer);
+        }
+
+        prev_tsc = cur_tsc;
+
+        nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
         rte_atomic32_add(&counter, nb_rx);
-        if (unlikely(nb_rx == 0))
-                continue;
-        PRINT_DEBUG("Received %8d packets", nb_rx);
         /* Free packets. */
-        uint16_t idx;
-        for (idx = 0; idx < nb_rx; idx++)
-            rte_pktmbuf_free(bufs[idx]);
+        for (i = 0; i < nb_rx; i++)
+            rte_pktmbuf_free(pkts_burst[i]);
+        if (nb_rx)
+            send_packets(client, buffer, nb_rx);
+        else
+            send_packets(client, buffer, BURST_SIZE);
     }
 }
 
 static void
-report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
+report_stat(struct rte_timer *tim, void *arg)
 {
+    int *period = (int *)arg;
     PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
-
     int count = rte_atomic32_read(&counter);
-    PRINT_INFO("%8d", count);
+    PRINT_INFO("%8d", count / *period);
     rte_atomic32_set(&counter, 0);
 	if (force_quit)
 		rte_timer_stop(tim);
@@ -257,9 +258,12 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 int
 main(int argc, char *argv[])
 {
-    unsigned master_core, lcore_id;
+    struct rte_eth_dev_info dev_info;
+    unsigned lcore_id;
     uint8_t portid = 0;
 	force_quit = false;
+    struct rte_eth_dev_tx_buffer *tx_buffer;
+
     /* Learner's instance starts at 1 */
     /* Initialize the Environment Abstraction Layer (EAL). */
     int ret = rte_eal_init(argc, argv);
@@ -275,8 +279,10 @@ main(int argc, char *argv[])
     client.test = client_config.test;
     client.cur_inst = 1;
 
-	rte_timer_init(&timer);
+    rte_timer_init(&timer);
     uint64_t hz = rte_get_timer_hz();
+
+    rte_eth_dev_info_get(portid, &dev_info);
     /* increase call frequency to rte_timer_manage() to increase the precision */
     TIMER_RESOLUTION_CYCLES = hz / 100;
     PRINT_INFO("1 cycle is %3.2f ns", 1E9 / (double)hz);
@@ -289,23 +295,29 @@ main(int argc, char *argv[])
             MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
     if (client.mbuf_pool == NULL)
             rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
+
+    tx_buffer = rte_zmalloc_socket("tx_buffer",
+                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+                rte_eth_dev_socket_id(portid));
+    if (tx_buffer == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+                (unsigned) portid);
+
+    rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
+
     /* Initialize port 0. */
     if (port_init(portid, client.mbuf_pool) != 0)
             rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
-    /* master core */
-    master_core = rte_lcore_id();
-    /* slave core */
-    lcore_id = rte_get_next_lcore(master_core, 0, 1);
-	rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
-	rte_timer_subsystem_init();
-	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+    /* display stats every period seconds */
+    lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    int period = client_config.period;
+    rte_timer_reset(&timer, period*hz, PERIODICAL, lcore_id, report_stat, &period);
+    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
-    /* slave core */
-    lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
-	rte_eal_remote_launch(send_initial_packets, &client, lcore_id);
+	rte_timer_subsystem_init();
 
     /* Call lcore_main on the master core only. */
-    lcore_main(portid);
+    lcore_main(portid, &client, tx_buffer);
     return 0;
 }

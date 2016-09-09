@@ -4,13 +4,13 @@
 #include <stdbool.h>
 
 /* number of elements in the mbuf pool */
-#define NUM_MBUFS 8191
+#define NUM_MBUFS 8192
 /* Size of the per-core object cache */
-#define MBUF_CACHE_SIZE 250
+#define MBUF_CACHE_SIZE 256
 /* Maximum number of packets in sending or receiving */
 #define BURST_SIZE 32
 
-#define RX_RING_SIZE 512
+#define RX_RING_SIZE 128
 #define TX_RING_SIZE 512
 
 /* 1 acceptor for debugging */

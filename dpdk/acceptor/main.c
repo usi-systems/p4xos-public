@@ -307,6 +307,8 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+    uint64_t hz = rte_get_timer_hz();
+    PRINT_INFO("1 cycle is %3.2f ns", 1E9 / (double)hz);
 
 
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",

@@ -6,7 +6,7 @@
 #include "rte_paxos.h"
 
 /* Macros for printing using RTE_LOG */
-#define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
+#define RTE_LOGTYPE_APP RTE_LOGTYPE_USER8
 #define FATAL_ERROR(fmt, args...)       rte_exit(EXIT_FAILURE, fmt "\n", ##args)
 #define PRINT_INFO(fmt, args...)        RTE_LOG(INFO, APP, fmt "\n", ##args)
 #define PRINT_DEBUG(fmt, args...)       RTE_LOG(DEBUG, APP, fmt "\n", ##args)
