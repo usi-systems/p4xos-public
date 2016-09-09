@@ -32,10 +32,9 @@ uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags)
         return rte_ipv6_phdr_cksum(l3_hdr, ol_flags);
 }
 
-uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
+void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t dstIP,
         uint16_t sport, uint16_t dport, size_t data_size, uint8_t output_port)
 {
-    uint64_t ol_flags = 0;
     size_t pkt_size = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
         sizeof(struct udp_hdr) + data_size;
     (*created_pkt)->data_len = pkt_size;
@@ -53,8 +52,6 @@ uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_
     iph->dst_addr = rte_cpu_to_be_32(dstIP);
     iph->version_ihl = 0x45;
     iph->hdr_checksum = 0;
-    ol_flags |= PKT_TX_IPV4;
-    ol_flags |= PKT_TX_IP_CKSUM;
     iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) +
             sizeof(struct udp_hdr) + sizeof(struct paxos_message));
     iph->next_proto_id = IPPROTO_UDP;
@@ -62,10 +59,8 @@ uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_
     udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
     udp->src_port = rte_cpu_to_be_16(sport);
     udp->dst_port = rte_cpu_to_be_16(dport);
-    ol_flags |= PKT_TX_UDP_CKSUM;
-    udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, ol_flags);
     udp->dgram_len = rte_cpu_to_be_16(data_size);
-    return ol_flags;
+    udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, (*created_pkt)->ol_flags);
 }
 
 void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
@@ -76,21 +71,24 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     created_pkt->l2_len = sizeof(struct ether_hdr);
     created_pkt->l3_len = sizeof(struct ipv4_hdr);
     created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
-    uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95),
-                        IPv4(239,3,29,73), sport, dport,
-                        sizeof(struct paxos_message), port_id);
+    created_pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
     size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
     size_t paxos_offset = udp_offset + sizeof(struct udp_hdr);
 
-    struct paxos_hdr *px = rte_pktmbuf_mtod_offset(created_pkt, struct paxos_hdr *, paxos_offset);
+    struct paxos_hdr *px = rte_pktmbuf_mtod_offset(created_pkt,
+                                struct paxos_hdr *, paxos_offset);
     px->msgtype = rte_cpu_to_be_16(pm->type);
     px->inst = rte_cpu_to_be_32(pm->u.accept.iid);
     px->rnd = rte_cpu_to_be_16(pm->u.accept.ballot);
     px->vrnd = rte_cpu_to_be_16(pm->u.accept.value_ballot);
     px->acptid = 0;
     px->value_len = rte_cpu_to_be_16(pm->u.accept.value.paxos_value_len);
-    rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val, pm->u.accept.value.paxos_value_len);
-    created_pkt->ol_flags = ol_flags;
+    rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
+                pm->u.accept.value.paxos_value_len);
+    craft_new_packet(&created_pkt, IPv4(192,168,4,95),
+                        IPv4(224,3,29,73), sport, dport,
+                        sizeof(struct paxos_message) +
+                        pm->u.accept.value.paxos_value_len, port_id);
 }
 
 void send_batch(struct rte_mbuf **mbufs, int count, int port_id)

@@ -77,6 +77,7 @@ static struct rte_timer timer;
 
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
+
 static void
 generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
     struct rte_eth_dev_tx_buffer *buffer, enum PAXOS_TEST t, int cur_inst)
@@ -100,7 +101,7 @@ generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
     }
 
     char str[] = "Hello";
-    struct paxos_accepted accepted = {
+    struct paxos_accept accept = {
         .iid = 1,
         .ballot = 1,
         .value_ballot = 1,
@@ -108,12 +109,12 @@ generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
         .value = {sizeof(str), str},
     };
     struct paxos_message pm;
-    pm.type = (PAXOS_ACCEPTED);
-    pm.u.accepted = accepted;
+    pm.type = (PAXOS_ACCEPT);
+    pm.u.accept = accept;
 	unsigned i;
 	for (i = 0; i < nb_tx; i++) {
-	    add_paxos_message(&pm, pkts_burst[i], 12345, dport);
-        pm.u.accepted.iid = cur_inst;
+        pm.u.accept.iid = cur_inst;
+        add_paxos_message(&pm, pkts_burst[i], 12345, dport);
         rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
         PRINT_DEBUG("submit instance %u", cur_inst);
     }
@@ -170,6 +171,17 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     uint16_t q;
     if (port >= rte_eth_dev_count())
             return -1;
+    struct rte_eth_dev_info dev_info;
+    struct rte_eth_txconf *txconf;
+    struct rte_eth_rxconf *rxconf;
+    rte_eth_dev_info_get(port, &dev_info);
+
+    rxconf = &dev_info.default_rxconf;
+    txconf = &dev_info.default_txconf;
+
+    txconf->txq_flags &= PKT_TX_IPV4;
+    txconf->txq_flags &= PKT_TX_UDP_CKSUM;
+
     /* Configure the Ethernet device. */
     retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
     if (retval != 0)
@@ -177,14 +189,14 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     /* Allocate and set up 1 RX queue per Ethernet port. */
     for (q = 0; q < rx_rings; q++) {
             retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
-                            rte_eth_dev_socket_id(port), 0, mbuf_pool);
+                            rte_eth_dev_socket_id(port), rxconf, mbuf_pool);
             if (retval < 0)
                     return retval;
     }
     /* Allocate and set up 1 TX queue per Ethernet port. */
     for (q = 0; q < tx_rings; q++) {
             retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,
-                            rte_eth_dev_socket_id(port), 0);
+                            rte_eth_dev_socket_id(port), txconf);
             if (retval < 0)
                 return retval;
     }

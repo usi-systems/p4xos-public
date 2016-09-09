@@ -24,7 +24,7 @@ struct paxos_hdr {
 
 void print_paxos_hdr(struct paxos_hdr *p);
 uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags);
-uint64_t craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP,
+void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP,
         uint32_t dstIP, uint16_t sport, uint16_t dport, size_t data_size,
         uint8_t output_port);
 void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
