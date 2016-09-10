@@ -61,7 +61,7 @@
 #include "args.h"
 
 
-#define BURST_TX_DRAIN_US 1 /* TX drain every ~1us */
+#define BURST_TX_DRAIN_US 1 /* TX drain every ~1µs */
 
 struct client {
     enum PAXOS_TEST test;
@@ -74,9 +74,11 @@ static const struct rte_eth_conf port_conf_default = {
 };
 
 static struct rte_timer timer;
+static struct rte_timer gen_timer;
 
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
+static struct rte_eth_dev_tx_buffer *tx_buffer;
 
 static void
 generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
@@ -100,7 +102,7 @@ generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
             dport = 11111;
     }
 
-    char str[] = "Hello";
+    char str[] = "Hello World";
     struct paxos_accept accept = {
         .iid = 1,
         .ballot = 1,
@@ -126,6 +128,15 @@ send_packets(struct client *client, struct rte_eth_dev_tx_buffer *buffer, int nb
     struct rte_mbuf *bufs[nb_tx];
     rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, nb_tx);
     generate_packets(bufs, nb_tx, buffer, client->test, client->cur_inst);
+}
+
+static void
+gen_timer_callback(struct rte_timer *tim, void *arg)
+{
+    struct client* client = (struct client*) arg;
+    send_packets(client, tx_buffer, 1);
+    if (force_quit)
+        rte_timer_stop(tim);
 }
 
 static int
@@ -217,7 +228,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
  * an input port and writing to an output port.
  */
 static void
-lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *buffer)
+lcore_main(uint8_t port)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
@@ -229,12 +240,11 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
-
         cur_tsc = rte_rdtsc();
         /* TX burst queue drain */
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
-            rte_eth_tx_buffer_flush(port, 0, buffer);
+            rte_eth_tx_buffer_flush(port, 0, tx_buffer);
         }
 
         prev_tsc = cur_tsc;
@@ -244,10 +254,6 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
         /* Free packets. */
         for (i = 0; i < nb_rx; i++)
             rte_pktmbuf_free(pkts_burst[i]);
-        if (nb_rx)
-            send_packets(client, buffer, nb_rx);
-        else
-            send_packets(client, buffer, BURST_SIZE);
     }
 }
 
@@ -274,7 +280,6 @@ main(int argc, char *argv[])
     unsigned lcore_id;
     uint8_t portid = 0;
 	force_quit = false;
-    struct rte_eth_dev_tx_buffer *tx_buffer;
 
     /* Learner's instance starts at 1 */
     /* Initialize the Environment Abstraction Layer (EAL). */
@@ -292,6 +297,7 @@ main(int argc, char *argv[])
     client.cur_inst = 1;
 
     rte_timer_init(&timer);
+    rte_timer_init(&gen_timer);
     uint64_t hz = rte_get_timer_hz();
 
     rte_eth_dev_info_get(portid, &dev_info);
@@ -327,9 +333,14 @@ main(int argc, char *argv[])
     rte_timer_reset(&timer, period*hz, PERIODICAL, lcore_id, report_stat, &period);
     rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
+    lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    rte_timer_reset(&gen_timer, period*hz, PERIODICAL, lcore_id,
+                        gen_timer_callback, &client);
+    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+
 	rte_timer_subsystem_init();
 
     /* Call lcore_main on the master core only. */
-    lcore_main(portid, &client, tx_buffer);
+    lcore_main(portid);
     return 0;
 }
