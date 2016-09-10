@@ -12,6 +12,9 @@ struct {
     uint64_t total_pkts;
 } latency_numbers;
 
+static const struct ether_addr ether_node96 = {
+    .addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xc8 }
+};
 
 void print_paxos_hdr(struct paxos_hdr *p)
 {
@@ -43,18 +46,21 @@ void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t ds
     eth = rte_pktmbuf_mtod(*created_pkt, struct ether_hdr*);
     /* set packet s_addr using mac address of output port */
     rte_eth_macaddr_get(output_port, &eth->s_addr);
-    /* Set multicast address 01-1b-19-00-00-00 */
+    ether_addr_copy(&ether_node96, &eth->d_addr);
     eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
     struct ipv4_hdr *iph;
     iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(*created_pkt, struct ipv4_hdr*,
             sizeof(struct ether_hdr));
+    iph->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) +
+            sizeof(struct udp_hdr) + data_size);
+    iph->version_ihl = 0x45;
+    iph->time_to_live = 64;
+    iph->packet_id = rte_cpu_to_be_16(rte_rdtsc());
+    iph->fragment_offset = rte_cpu_to_be_16(IPV4_HDR_DF_FLAG);
+    iph->next_proto_id = IPPROTO_UDP;
+    iph->hdr_checksum = 0;
     iph->src_addr = rte_cpu_to_be_32(srcIP);
     iph->dst_addr = rte_cpu_to_be_32(dstIP);
-    iph->version_ihl = 0x45;
-    iph->hdr_checksum = 0;
-    iph->total_length = rte_cpu_to_be_16( sizeof(struct ipv4_hdr) +
-            sizeof(struct udp_hdr) + sizeof(struct paxos_message));
-    iph->next_proto_id = IPPROTO_UDP;
     struct udp_hdr *udp;
     udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
     udp->src_port = rte_cpu_to_be_16(sport);
@@ -86,7 +92,7 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
                 pm->u.accept.value.paxos_value_len);
     craft_new_packet(&created_pkt, IPv4(192,168,4,95),
-                        IPv4(224,3,29,73), sport, dport,
+                        IPv4(192,168,4,96), sport, dport,
                         sizeof(struct paxos_message) +
                         pm->u.accept.value.paxos_value_len, port_id);
 }
