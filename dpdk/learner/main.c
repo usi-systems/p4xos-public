@@ -75,15 +75,41 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 		print_paxos_hdr(paxos_hdr);
 	}
 
-	struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
-	struct paxos_accepted ack = {
-			.iid = rte_be_to_cpu_32(paxos_hdr->inst),
-			.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
-			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
-			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
-			.value = *v };
+	uint16_t msgtype = rte_be_to_cpu_16(paxos_hdr->msgtype);
+	switch(msgtype) {
+		case PAXOS_PROMISE: {
+			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
+			struct paxos_promise promise = {
+				.iid = rte_be_to_cpu_32(paxos_hdr->inst),
+				.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
+				.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
+				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
+				.value = *v,
+			};
+			int ret;
+			paxos_message pa;
+			ret = learner_receive_promise(l, &promise, &pa.u.accept);
+			if (ret)
+				add_paxos_message(&pa, pkt, LEARNER_PORT, ACCEPTOR_PORT);
+			break;
+		}
+		case PAXOS_ACCEPTED: {
+			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
+			struct paxos_accepted ack = {
+				.iid = rte_be_to_cpu_32(paxos_hdr->inst),
+				.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
+				.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
+				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
+				.value = *v,
+			};
+			learner_receive_accepted(l, &ack);
+			break;
+		}
+		default:
+			PRINT_DEBUG("No handler for %u", msgtype);
+	}
 
-	learner_receive_accepted(l, &ack);
+
 
 	outer_header_len = info.outer_l2_len + info.outer_l3_len
 		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
@@ -165,7 +191,6 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
 static void
 lcore_main(uint8_t port)
 {
-
 	if (rte_eth_dev_socket_id(port) > 0 &&
 			rte_eth_dev_socket_id(port) !=
 				(int) rte_socket_id())
@@ -227,23 +252,19 @@ check_holes(struct rte_timer *tim, void *arg)
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n",
 				__func__, lcore_id);
-
 	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
-
-	paxos_repeat repeat;
-	unsigned chunks = 10;
-	if (learner_has_holes(l, &repeat.from, &repeat.to)) {
-		if ((repeat.to - repeat.from) > chunks)
-			repeat.to = repeat.from + chunks;
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-				"Learner has holes from %d to %d\n", repeat.from, repeat.to);
-		__attribute__((unused)) paxos_message repeat_msg = {
-			.type = PAXOS_REPEAT,
-			.u.repeat = repeat,
-		};
-		add_paxos_message(&repeat_msg, created_pkt, LEARNER_PORT, ACCEPTOR_PORT);
+	unsigned from_inst;
+	unsigned to_inst;
+	if (learner_has_holes(l, &from_inst, &to_inst)) {
+		paxos_log_debug("Learner has holes from %d to %d\n", from_inst, to_inst);
+        unsigned iid;
+        for (iid = from_inst; iid < to_inst; iid++) {
+            paxos_message out;
+            out.type = PAXOS_PREPARE;
+            learner_prepare(l, &out.u.prepare, iid);
+			add_paxos_message(&out, created_pkt, LEARNER_PORT, ACCEPTOR_PORT);
+        }
 	}
-
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
