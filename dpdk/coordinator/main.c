@@ -23,8 +23,17 @@
 #include "utils.h"
 #include "const.h"
 
-#define BURST_TX_DRAIN_US 1 /* TX drain every ~1us */
+#define BURST_TX_DRAIN_NS 10 /* TX drain every ~100ns */
 
+/*
+ * Construct Ethernet multicast address from IPv4 multicast address.
+ * Citing RFC 1112, section 6.4:
+ * "An IP host group address is mapped to an Ethernet multicast address
+ * by placing the low-order 23-bits of the IP address into the low-order
+ * 23 bits of the Ethernet multicast address 01-00-5E-00-00-00 (hex)."
+ */
+#define ETHER_ADDR_FOR_IPV4_MCAST(x)    \
+        (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -48,7 +57,10 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	struct udp_hdr *udp_hdr;
 	struct paxos_hdr *paxos_hdr;
 	struct ether_hdr *phdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
-
+	union {
+        uint64_t as_int;
+        struct ether_addr as_addr;
+    } dst_eth_addr;
 	parse_ethernet(phdr, &info, &l4_proto);
 
 	if (l4_proto != IPPROTO_UDP)
@@ -69,7 +81,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 		rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
 		print_paxos_hdr(paxos_hdr);
 	}
-
+	dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(ACCEPTOR_ADDR);
+	ether_addr_copy(&dst_eth_addr.as_addr, &phdr->d_addr);
     iph->dst_addr = rte_cpu_to_be_32(ACCEPTOR_ADDR);
     iph->hdr_checksum = 0;
 	paxos_hdr->inst = rte_cpu_to_be_32(cord->cur_inst++);
@@ -158,16 +171,13 @@ lcore_main(uint8_t port, struct coordinator* cord)
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
     unsigned nb_rx;
-    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
-            BURST_TX_DRAIN_US;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
 
     prev_tsc = 0;
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
-		// Check if signal is received
-		if (force_quit)
-			break;
 
         cur_tsc = rte_rdtsc();
         /* TX burst queue drain */
@@ -192,7 +202,7 @@ main(int argc, char *argv[])
 	signal(SIGINT, signal_handler);
 	force_quit = false;
 
-	struct coordinator cord = { .cur_inst = 0 };
+	struct coordinator cord = { .cur_inst = 1 };
 	/* init EAL */
 	int ret = rte_eal_init(argc, argv);
 
