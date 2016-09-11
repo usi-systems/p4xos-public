@@ -23,6 +23,8 @@
 #include "utils.h"
 #include "const.h"
 
+#define BURST_TX_DRAIN_US 1 /* TX drain every ~1us */
+
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -33,10 +35,8 @@ struct rte_mempool *mbuf_pool;
 
 struct coordinator {
 	uint32_t cur_inst; /* Paxos instance */
+    struct rte_eth_dev_tx_buffer *tx_buffer;
 };
-
-
-
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
@@ -70,16 +70,16 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 		print_paxos_hdr(paxos_hdr);
 	}
 
-
+    iph->dst_addr = rte_cpu_to_be_32(ACCEPTOR_ADDR);
+    iph->hdr_checksum = 0;
 	paxos_hdr->inst = rte_cpu_to_be_32(cord->cur_inst++);
-	pkt->l2_len = sizeof(struct ether_hdr);
-	pkt->l3_len = sizeof(struct ipv4_hdr);
-	pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
+	pkt->l2_len = info.outer_l2_len;
+	pkt->l3_len = info.outer_l3_len;
+	pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
-	udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct paxos_hdr));
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-
+    rte_eth_tx_buffer(0, 0, cord->tx_buffer, pkt);
 	return ret;
 
 }
@@ -95,7 +95,8 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		pkts[i]->udata64 = now;
-		paxos_rx_process(pkts[i], cord);
+		if(paxos_rx_process(pkts[i], cord) < 0)
+			rte_pktmbuf_free(pkts[i]);
 	}
 	return nb_pkts;
 }
@@ -152,36 +153,33 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct coordinator* cord)
 }
 
 static void
-lcore_main(uint8_t port)
+lcore_main(uint8_t port, struct coordinator* cord)
 {
+    struct rte_mbuf *pkts_burst[BURST_SIZE];
+    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    unsigned nb_rx;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
+            BURST_TX_DRAIN_US;
 
-	if (rte_eth_dev_socket_id(port) > 0 &&
-			rte_eth_dev_socket_id(port) !=
-				(int) rte_socket_id())
-		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-				"WARNING, port %u is on retmote NUMA node to "
-				"polling thread.\nPerformance will "
-				"not be optimal.\n", port);
+    prev_tsc = 0;
 
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. "
-					"[Ctrl+C to quit]\n", rte_lcore_id());
-
-	for (;;) {
+    /* Run until the application is quit or killed. */
+    while (!force_quit) {
 		// Check if signal is received
 		if (force_quit)
 			break;
 
-		struct rte_mbuf *bufs[BURST_SIZE];
-		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+        cur_tsc = rte_rdtsc();
+        /* TX burst queue drain */
+        diff_tsc = cur_tsc - prev_tsc;
+        if (unlikely(diff_tsc > drain_tsc)) {
+            rte_eth_tx_buffer_flush(port, 0, cord->tx_buffer);
+        }
+
+        prev_tsc = cur_tsc;
+		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
-
-		const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
-		if (unlikely(nb_tx < nb_rx)) {
-			uint16_t idx;
-			for (idx = nb_tx; idx < nb_rx; idx++)
-				rte_pktmbuf_free(bufs[idx]);
-		}
 	}
 }
 
@@ -194,7 +192,7 @@ main(int argc, char *argv[])
 	signal(SIGINT, signal_handler);
 	force_quit = false;
 
-	struct coordinator c = { .cur_inst = 0 };
+	struct coordinator cord = { .cur_inst = 0 };
 	/* init EAL */
 	int ret = rte_eal_init(argc, argv);
 
@@ -209,11 +207,20 @@ main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
+    cord.tx_buffer = rte_zmalloc_socket("tx_buffer",
+                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+                rte_eth_dev_socket_id(portid));
+    if (cord.tx_buffer == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+                (unsigned) portid);
 
-	if (port_init(portid, mbuf_pool, &c) != 0)
+    rte_eth_tx_buffer_init(cord.tx_buffer, BURST_SIZE);
+
+
+	if (port_init(portid, mbuf_pool, &cord) != 0)
 		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
-	lcore_main(portid);
+	lcore_main(portid, &cord);
 
 	return 0;
 }
