@@ -28,7 +28,7 @@ void parse_args(int argc, char **argv)
                 }
         }
         /* Check that options were parsed ok */
-        if (acceptor_config.acceptor_id > 0) {
+        if (acceptor_config.acceptor_id < 0) {
                 print_usage(prgname);
                 FATAL_ERROR("acceptor_id is invalid");
         }

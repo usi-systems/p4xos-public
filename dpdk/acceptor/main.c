@@ -146,7 +146,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 				paxos_hdr->rnd = rte_cpu_to_be_16(out.u.promise.ballot);
 				paxos_hdr->vrnd = rte_cpu_to_be_16(out.u.promise.value_ballot);
 				paxos_hdr->acptid = rte_cpu_to_be_16(out.u.promise.aid);
-				paxos_hdr->value_len = rte_cpu_to_be_16(out.u.promise.value.paxos_value_len);
+				paxos_hdr->value_len = rte_cpu_to_be_32(out.u.promise.value.paxos_value_len);
 				if (out.u.promise.value.paxos_value_len != 0)
 					rte_memcpy(paxos_hdr->paxosval, out.u.promise.value.paxos_value_val,
 							out.u.promise.value.paxos_value_len);
