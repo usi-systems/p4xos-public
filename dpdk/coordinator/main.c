@@ -50,7 +50,6 @@ struct coordinator {
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 {
-	int ret = 0;
 	uint8_t l4_proto = 0;
 	union tunnel_offload_info info = { .data = 0 };
 	struct ipv4_hdr *iph;
@@ -93,7 +92,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
     rte_eth_tx_buffer(0, 0, cord->tx_buffer, pkt);
-	return ret;
+	return 0;
 
 }
 

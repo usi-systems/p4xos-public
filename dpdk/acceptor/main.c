@@ -32,6 +32,9 @@
 #include "rte_paxos.h"
 #include "args.h"
 
+
+#define BURST_TX_DRAIN_NS 10 /* TX drain every ~10ns */
+
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
@@ -42,6 +45,7 @@ static const struct ether_addr ether_multicast = {
 };
 
 struct rte_mempool *mbuf_pool;
+struct rte_eth_dev_tx_buffer *tx_buffer;
 
 __attribute((unused))
 static void
@@ -70,7 +74,6 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 {
 	int ret = 0;
 	uint8_t l4_proto = 0;
-	uint16_t outer_header_len;
 	union tunnel_offload_info info = { .data = 0 };
 	struct udp_hdr *udp_hdr;
 	struct paxos_hdr *paxos_hdr;
@@ -171,10 +174,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 	} else {
 		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
 					"Acceptor rejected Paxos message\n");
-		outer_header_len = info.outer_l2_len + info.outer_l3_len
-							+ rte_be_to_cpu_16(udp_hdr->dgram_len);
-
-		rte_pktmbuf_adj(pkt, outer_header_len);
+		return -1;
 	}
     iph->hdr_checksum = 0;
 	pkt->l2_len = info.outer_l2_len;
@@ -184,7 +184,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 	udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-	return ret;
+    rte_eth_tx_buffer(0, 0, tx_buffer, pkt);
+	return 0;
 
 }
 
@@ -199,7 +200,8 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		pkts[i]->udata64 = now;
-		paxos_rx_process(pkts[i], acceptor);
+		if (paxos_rx_process(pkts[i], acceptor) < 0)
+			rte_pktmbuf_free(pkts[i]);
 	}
 
 	return nb_pkts;
@@ -260,26 +262,30 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct acceptor* acceptor
 static void
 lcore_main(uint8_t port)
 {
-	if (rte_eth_dev_socket_id(port) > 0 &&
-				rte_eth_dev_socket_id(port) != (int) rte_socket_id()) {
-		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-				"WARNING, port %u is on retmote NUMA node to "
-				"polling thread.\nPerformance will "
-				"not be optimal.\n", port);
-	}
+    struct rte_mbuf *pkts_burst[BURST_SIZE];
+    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    unsigned nb_rx;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
 
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets."
-				"[Ctrl+C to quit]\n", rte_lcore_id());
+    prev_tsc = 0;
 
-	while (!force_quit) {
-		struct rte_mbuf *pkts_burst[BURST_SIZE];
-		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
+    /* Run until the application is quit or killed. */
+    while (!force_quit) {
+
+        cur_tsc = rte_rdtsc();
+        /* TX burst queue drain */
+        diff_tsc = cur_tsc - prev_tsc;
+        if (unlikely(diff_tsc > drain_tsc)) {
+            rte_eth_tx_buffer_flush(port, 0, tx_buffer);
+        }
+
+        prev_tsc = cur_tsc;
+		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
-
-		uint16_t nb_tx = rte_eth_tx_burst(port, 0, pkts_burst, nb_rx);
 		unsigned i;
-        for (i = nb_tx; i < nb_rx; i++)
+        for (i = 0; i < nb_rx; i++)
             rte_pktmbuf_free(pkts_burst[i]);
 	}
 }
@@ -315,6 +321,16 @@ main(int argc, char *argv[])
 
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
+
+    tx_buffer = rte_zmalloc_socket("tx_buffer",
+                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+                rte_eth_dev_socket_id(portid));
+    if (tx_buffer == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+                (unsigned) portid);
+
+    rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
+
 
 	//initialize acceptor
 	struct acceptor *acceptor = acceptor_new(acceptor_config.acceptor_id);
