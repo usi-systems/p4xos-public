@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "const.h"
 #include "rte_paxos.h"
+#include "args.h"
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -288,7 +289,6 @@ lcore_main(uint8_t port)
 int
 main(int argc, char *argv[])
 {
-	int acceptor_id = 0;
 	uint8_t portid = 0;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
@@ -299,6 +299,11 @@ main(int argc, char *argv[])
 
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+
+    argc -= ret;
+    argv += ret;
+
+    parse_args(argc, argv);
 
     uint64_t hz = rte_get_timer_hz();
     PRINT_INFO("1 cycle is %3.2f ns", 1E9 / (double)hz);
@@ -312,7 +317,7 @@ main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
 	//initialize acceptor
-	struct acceptor *acceptor = acceptor_new(acceptor_id);
+	struct acceptor *acceptor = acceptor_new(acceptor_config.acceptor_id);
 
 	if (port_init(portid, mbuf_pool, acceptor) != 0)
 		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
