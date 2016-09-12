@@ -112,8 +112,6 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.value = *v };
 			//dump_prepare_message(&prepare);
 			ret = acceptor_receive_prepare(acceptor, &prepare, &out);
-			udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
-			udp_hdr->dst_port = rte_cpu_to_be_16(PROPOSER_PORT);
 			break;
 		}
 		case PAXOS_ACCEPT:
@@ -127,8 +125,6 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 			.value = *v };
 			ret = acceptor_receive_accept(acceptor, &accept, &out);
-			udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
-			udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 			break;
 		}
 		default:
@@ -175,16 +171,17 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
 					"Acceptor rejected Paxos message\n");
 		outer_header_len = info.outer_l2_len + info.outer_l3_len
-			+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
+							+ rte_be_to_cpu_16(udp_hdr->dgram_len);
 
 		rte_pktmbuf_adj(pkt, outer_header_len);
 	}
-
-	pkt->l2_len = sizeof(struct ether_hdr);
-	pkt->l3_len = sizeof(struct ipv4_hdr);
-	pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
+    iph->hdr_checksum = 0;
+	pkt->l2_len = info.outer_l2_len;
+	pkt->l3_len = info.outer_l3_len;
+	pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
-	udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct paxos_hdr));
+	udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
+	udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
 	return ret;
 
@@ -273,20 +270,16 @@ lcore_main(uint8_t port)
 	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets."
 				"[Ctrl+C to quit]\n", rte_lcore_id());
 
-	for (;;) {
-		// Check if signal is received
-		if (force_quit)
-			break;
-
-		struct rte_mbuf *bufs[BURST_SIZE];
-		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+	while (!force_quit) {
+		struct rte_mbuf *pkts_burst[BURST_SIZE];
+		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
 
-			uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
-			while (unlikely(nb_tx < nb_rx)) {
-				nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
-			}
+		uint16_t nb_tx = rte_eth_tx_burst(port, 0, pkts_burst, nb_rx);
+		unsigned i;
+        for (i = nb_tx; i < nb_rx; i++)
+            rte_pktmbuf_free(pkts_burst[i]);
 	}
 }
 
