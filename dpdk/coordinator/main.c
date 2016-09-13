@@ -93,7 +93,6 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
     rte_eth_tx_buffer(0, 0, cord->tx_buffer, pkt);
 	return 0;
-
 }
 
 static uint16_t

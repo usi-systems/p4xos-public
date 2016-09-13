@@ -12,9 +12,21 @@ struct {
     uint64_t total_pkts;
 } latency_numbers;
 
-static const struct ether_addr ether_node96 = {
-    .addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xc8 }
-};
+union {
+    uint64_t as_int;
+    struct ether_addr as_addr;
+} dst_eth_addr;
+
+/*
+ * Construct Ethernet multicast address from IPv4 multicast address.
+ * Citing RFC 1112, section 6.4:
+ * "An IP host group address is mapped to an Ethernet multicast address
+ * by placing the low-order 23-bits of the IP address into the low-order
+ * 23 bits of the Ethernet multicast address 01-00-5E-00-00-00 (hex)."
+ */
+#define ETHER_ADDR_FOR_IPV4_MCAST(x)    \
+        (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
+
 
 void print_paxos_hdr(struct paxos_hdr *p)
 {
@@ -46,8 +58,14 @@ void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t ds
     eth = rte_pktmbuf_mtod(*created_pkt, struct ether_hdr*);
     /* set packet s_addr using mac address of output port */
     rte_eth_macaddr_get(output_port, &eth->s_addr);
-    ether_addr_copy(&ether_node96, &eth->d_addr);
+    /*
+     * Assume all dstIP is multicast address. Then the destination MAC address
+     * need to be recomputed.
+     */
+    dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(dstIP);
+    ether_addr_copy(&dst_eth_addr.as_addr, &eth->d_addr);
     eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
+
     struct ipv4_hdr *iph;
     iph = (struct ipv4_hdr *)rte_pktmbuf_mtod_offset(*created_pkt, struct ipv4_hdr*,
             sizeof(struct ether_hdr));
@@ -66,18 +84,19 @@ void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t ds
     udp->src_port = rte_cpu_to_be_16(sport);
     udp->dst_port = rte_cpu_to_be_16(dport);
     udp->dgram_len = rte_cpu_to_be_16(data_size);
+
+    (*created_pkt)->l2_len = sizeof(struct ether_hdr);
+    (*created_pkt)->l3_len = sizeof(struct ipv4_hdr);
+    (*created_pkt)->l4_len = sizeof(struct udp_hdr) + data_size;
+    (*created_pkt)->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
     udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, (*created_pkt)->ol_flags);
+
 }
 
 void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
-                        uint16_t sport, uint16_t dport)
+                        uint16_t sport, uint16_t dport, uint32_t dstIP)
 {
     uint8_t port_id = 0;
-    // struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
-    created_pkt->l2_len = sizeof(struct ether_hdr);
-    created_pkt->l3_len = sizeof(struct ipv4_hdr);
-    created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
-    created_pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
     size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
     size_t paxos_offset = udp_offset + sizeof(struct udp_hdr);
 
@@ -87,12 +106,12 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     px->inst = rte_cpu_to_be_32(pm->u.accept.iid);
     px->rnd = rte_cpu_to_be_16(pm->u.accept.ballot);
     px->vrnd = rte_cpu_to_be_16(pm->u.accept.value_ballot);
-    px->acptid = 0;
-    px->value_len = rte_cpu_to_be_16(pm->u.accept.value.paxos_value_len);
+    px->acptid = rte_cpu_to_be_16(0);
+    px->value_len = rte_cpu_to_be_32(pm->u.accept.value.paxos_value_len);
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
                 pm->u.accept.value.paxos_value_len);
     craft_new_packet(&created_pkt, IPv4(192,168,4,95),
-                        IPv4(192,168,4,96), sport, dport,
+                        dstIP, sport, dport,
                         sizeof(struct paxos_message) +
                         pm->u.accept.value.paxos_value_len, port_id);
 }

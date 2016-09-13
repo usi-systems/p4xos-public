@@ -61,7 +61,7 @@
 #include "args.h"
 
 
-#define BURST_TX_DRAIN_US 1 /* TX drain every ~1us */
+#define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
 
 struct client {
     enum PAXOS_TEST test;
@@ -77,46 +77,65 @@ static struct rte_timer timer;
 
 static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
 
+static char str[] = "Hello World";
 
-static void
-generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
-    struct rte_eth_dev_tx_buffer *buffer, enum PAXOS_TEST t, int cur_inst)
-{
-    uint16_t dport;
-    switch(t) {
-        case PROPOSER:
-            dport = PROPOSER_PORT;
-            break;
-        case COORDINATOR:
-            dport = COORDINATOR_PORT;
-            break;
-        case ACCEPTOR:
-            dport = ACCEPTOR_PORT;
-            break;
-        case LEARNER:
-            dport = LEARNER_PORT;
-            break;
-        default:
-            dport = 11111;
-    }
-
-    char str[] = "Hello";
-    struct paxos_accept accept = {
+static paxos_accept acpt = {
         .iid = 1,
         .ballot = 1,
         .value_ballot = 1,
         .aid = 0,
         .value = {sizeof(str), str},
-    };
+};
+
+static paxos_accepted accepted = {
+        .iid = 1,
+        .ballot = 1,
+        .value_ballot = 1,
+        .aid = 0,
+        .value = {sizeof(str), str},
+};
+
+static void
+generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
+    struct rte_eth_dev_tx_buffer *buffer, struct client* client)
+{
+    uint16_t dport = 0;
+    uint32_t dstIP = 0;
     struct paxos_message pm;
-    pm.type = (PAXOS_ACCEPT);
-    pm.u.accept = accept;
+    switch(client->test) {
+        case PROPOSER:
+            dport = PROPOSER_PORT;
+            break;
+        case COORDINATOR:
+            dport = COORDINATOR_PORT;
+            dstIP = COORDINATOR_ADDR;
+            pm.type = PAXOS_ACCEPT;
+            pm.u.accept = acpt;
+            break;
+        case ACCEPTOR:
+            dport = ACCEPTOR_PORT;
+            dstIP = ACCEPTOR_ADDR;
+            pm.type = PAXOS_ACCEPT;
+            pm.u.accept = acpt;
+            break;
+        case LEARNER:
+            dport = LEARNER_PORT;
+            dstIP = LEARNER_ADDR;
+            pm.type = PAXOS_ACCEPTED;
+            pm.u.accepted = accepted;
+            break;
+        default:
+            dport = 11111;
+    }
+
 	unsigned i;
 	for (i = 0; i < nb_tx; i++) {
-        pm.u.accept.iid = cur_inst;
-        add_paxos_message(&pm, pkts_burst[i], 12345, dport);
+        /* set instance number regardless of types */
+        pm.u.prepare.iid = client->cur_inst;
+        add_paxos_message(&pm, pkts_burst[i], 12345, dport, dstIP);
         rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
-        PRINT_DEBUG("submit instance %u", cur_inst);
+        PRINT_DEBUG("submit instance %u", client->cur_inst);
+        client->cur_inst++;
     }
 }
 
@@ -125,7 +144,7 @@ send_packets(struct client *client, struct rte_eth_dev_tx_buffer *buffer, int nb
 {
     struct rte_mbuf *bufs[nb_tx];
     rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, nb_tx);
-    generate_packets(bufs, nb_tx, buffer, client->test, client->cur_inst);
+    generate_packets(bufs, nb_tx, buffer, client);
 }
 
 static int
@@ -222,8 +241,8 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
     unsigned i, nb_rx;
-    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
-            BURST_TX_DRAIN_US;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
 
     prev_tsc = 0;
 

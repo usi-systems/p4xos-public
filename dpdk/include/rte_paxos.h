@@ -18,7 +18,7 @@ struct paxos_hdr {
 	uint16_t rnd;
 	uint16_t vrnd;
 	uint16_t acptid;
-	uint16_t value_len;
+	uint32_t value_len;
 	uint8_t paxosval[32];
 } __attribute__((__packed__));
 
@@ -28,7 +28,7 @@ void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP,
         uint32_t dstIP, uint16_t sport, uint16_t dport, size_t data_size,
         uint8_t output_port);
 void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
-                        uint16_t sport, uint16_t dport);
+                        uint16_t sport, uint16_t dport, uint32_t dstIP);
 void send_batch(struct rte_mbuf **mbufs, int count, int port_id);
 uint16_t calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused);
