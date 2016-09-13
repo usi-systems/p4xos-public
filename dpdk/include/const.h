@@ -23,9 +23,9 @@
 #define ACCEPTOR_PORT    34952
 #define LEARNER_PORT     34953
 
+#define COORDINATOR_ADDR IPv4(224,3,29,71)
+#define ACCEPTOR_ADDR IPv4(224,3,29,72)
 #define LEARNER_ADDR IPv4(224,3,29,73)
-#define ACCEPTOR_ADDR IPv4(224,3,29,73)
-#define COORDINATOR_ADDR IPv4(224,3,29,73)
 volatile bool force_quit;
 
 #endif

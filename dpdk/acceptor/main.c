@@ -26,6 +26,7 @@
 #include <rte_timer.h>
 /* get clock cycles */
 #include <rte_cycles.h>
+#include <rte_errno.h>
 
 #include "utils.h"
 #include "const.h"
@@ -43,6 +44,9 @@ static const struct rte_eth_conf port_conf_default = {
 static const struct ether_addr ether_multicast = {
 	.addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
 };
+
+#define ETHER_ADDR_FOR_IPV4_MCAST(x)    \
+        (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
 
 struct rte_mempool *mbuf_pool;
 struct rte_eth_dev_tx_buffer *tx_buffer;
@@ -176,6 +180,14 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 					"Acceptor rejected Paxos message\n");
 		return -1;
 	}
+	union {
+        uint64_t as_int;
+        struct ether_addr as_addr;
+    } dst_eth_addr;
+	dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(LEARNER_ADDR);
+	ether_addr_copy(&dst_eth_addr.as_addr, &phdr->d_addr);
+
+    iph->dst_addr = rte_cpu_to_be_32(LEARNER_ADDR);
     iph->hdr_checksum = 0;
 	pkt->l2_len = info.outer_l2_len;
 	pkt->l3_len = info.outer_l3_len;
@@ -258,6 +270,15 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct acceptor* acceptor
 	return 0;
 }
 
+static void
+on_sending_error(struct rte_mbuf **unsent, uint16_t count,
+	__attribute((unused)) void *userdata)
+{
+    PRINT_DEBUG("tx_buffer error: %s, %d packets", rte_strerror(rte_errno), count);
+    int i;
+    for (i = 0; i < count; i++)
+	    rte_pktmbuf_free(unsent[i]);
+}
 
 static void
 lcore_main(uint8_t port)
@@ -284,9 +305,6 @@ lcore_main(uint8_t port)
 		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
-		unsigned i;
-        for (i = 0; i < nb_rx; i++)
-            rte_pktmbuf_free(pkts_burst[i]);
 	}
 }
 
@@ -330,7 +348,7 @@ main(int argc, char *argv[])
                 (unsigned) portid);
 
     rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
-
+    rte_eth_tx_buffer_set_err_callback(tx_buffer, on_sending_error, NULL);
 
 	//initialize acceptor
 	struct acceptor *acceptor = acceptor_new(acceptor_config.acceptor_id);
