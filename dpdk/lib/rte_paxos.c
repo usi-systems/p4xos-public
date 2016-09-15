@@ -139,9 +139,9 @@ uint16_t calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
     latency_numbers.total_cycles += cycles;
     latency_numbers.total_pkts += nb_pkts;
 
-    if (latency_numbers.total_pkts > (10 * 1000 * 1000ULL)) {
+    if (latency_numbers.total_pkts >= ( 100 * 1000ULL)) {
         rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-        "Latency = %"PRIu64" cycles\n",
+        "avg. latency = %"PRIu64" cycles\n",
         latency_numbers.total_cycles / latency_numbers.total_pkts);
         latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
     }

@@ -8,7 +8,7 @@
 /* Size of the per-core object cache */
 #define MBUF_CACHE_SIZE 256
 /* Maximum number of packets in sending or receiving */
-#define BURST_SIZE 32
+#define BURST_SIZE 64
 
 #define RX_RING_SIZE 128
 #define TX_RING_SIZE 512

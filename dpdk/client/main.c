@@ -69,6 +69,12 @@ struct client {
     uint32_t cur_inst;
 };
 
+struct {
+    uint64_t total_cycles;
+    uint64_t total_pkts;
+} latency_numbers;
+
+
 static const struct rte_eth_conf port_conf_default = {
         .rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN }
 };
@@ -158,6 +164,7 @@ hexdump_paxos_hdr(struct rte_mbuf *created_pkt)
         rte_hexdump(stdout, "paxos", px, sizeof(struct paxos_hdr));
 }
 
+static uint64_t prev[BURST_SIZE];
 
 static uint16_t __attribute((unused))
 check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
@@ -169,13 +176,31 @@ check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
     unsigned i;
 
     for (i = 0; i < nb_pkts; i++) {
-        cycles += now - pkts[i]->udata64;
         hexdump_paxos_hdr(pkts[i]);
+        cycles += now - prev[i];
     }
 
+    latency_numbers.total_cycles += cycles;
+    latency_numbers.total_pkts += nb_pkts;
+
+    if (latency_numbers.total_pkts > (1000 * 1000ULL)) {
+        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
+        "Latency = %"PRIu64" cycles\n",
+        latency_numbers.total_cycles / latency_numbers.total_pkts);
+        latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
+    }
     return nb_pkts;
 };
 
+static uint16_t __attribute((unused))
+add_timestamp(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+    __attribute((unused)) struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
+{
+    unsigned i;
+    for (i = 0; i < nb_pkts; i++)
+        prev[i] = rte_rdtsc();
+    return nb_pkts;
+}
 
 /*
  * Initializes a given port using global settings and with the RX buffers
@@ -228,6 +253,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     rte_eth_promiscuous_enable(port);
 
     rte_eth_add_rx_callback(port, 0, check_return, NULL);
+    // rte_eth_add_tx_callback(port, 0, add_timestamp, NULL);
 
     return 0;
 }
@@ -245,6 +271,9 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
             BURST_TX_DRAIN_NS;
 
     prev_tsc = 0;
+
+
+    send_packets(client, buffer, BURST_SIZE);
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
@@ -265,8 +294,6 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
             rte_pktmbuf_free(pkts_burst[i]);
         if (nb_rx)
             send_packets(client, buffer, nb_rx);
-        else
-            send_packets(client, buffer, BURST_SIZE);
     }
 }
 

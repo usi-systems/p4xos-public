@@ -8,8 +8,7 @@
 /* get cores */
 #include <rte_lcore.h>
 #include <rte_mbuf.h>
-
-
+#include <rte_timer.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
@@ -46,6 +45,10 @@ struct coordinator {
 	uint32_t cur_inst; /* Paxos instance */
     struct rte_eth_dev_tx_buffer *tx_buffer;
 };
+
+static struct rte_timer timer;
+static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
@@ -91,7 +94,9 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-    rte_eth_tx_buffer(0, 0, cord->tx_buffer, pkt);
+    unsigned nb_tx = rte_eth_tx_buffer(0, 0, cord->tx_buffer, pkt);
+    if (nb_tx)
+        rte_atomic32_add(&tx_counter, nb_tx);
 	return 0;
 }
 
@@ -181,16 +186,30 @@ lcore_main(uint8_t port, struct coordinator* cord)
         /* TX burst queue drain */
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
-            rte_eth_tx_buffer_flush(port, 0, cord->tx_buffer);
+            unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, cord->tx_buffer);
+            if (nb_tx)
+                rte_atomic32_add(&tx_counter, nb_tx);
         }
 
         prev_tsc = cur_tsc;
 		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
+        rte_atomic32_add(&rx_counter, nb_rx);
 	}
 }
 
+static void
+report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
+{
+    int nb_tx = rte_atomic32_read(&tx_counter);
+    int nb_rx = rte_atomic32_read(&rx_counter);
+    PRINT_INFO("Throughput: tx %8d, rx %8d", nb_tx, nb_rx);
+    rte_atomic32_set(&tx_counter, 0);
+    rte_atomic32_set(&rx_counter, 0);
+    if (force_quit)
+        rte_timer_stop(tim);
+}
 
 int
 main(int argc, char *argv[])
@@ -207,6 +226,8 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+    rte_timer_init(&timer);
+    uint64_t hz = rte_get_timer_hz();
 
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
 			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
@@ -224,6 +245,12 @@ main(int argc, char *argv[])
 
     rte_eth_tx_buffer_init(cord.tx_buffer, BURST_SIZE);
 
+    /* display stats every period seconds */
+    int lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
+    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+
+    rte_timer_subsystem_init();
 
 	if (port_init(portid, mbuf_pool, &cord) != 0)
 		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);

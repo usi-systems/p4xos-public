@@ -49,7 +49,11 @@ static const struct ether_addr ether_multicast = {
         (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
 
 struct rte_mempool *mbuf_pool;
-struct rte_eth_dev_tx_buffer *tx_buffer;
+// struct rte_eth_dev_tx_buffer *tx_buffer;
+
+static struct rte_timer timer;
+static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
 
 __attribute((unused))
 static void
@@ -196,7 +200,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 	udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-    rte_eth_tx_buffer(0, 0, tx_buffer, pkt);
+    rte_eth_tx_burst(0, 0, &pkt, 1);
+    rte_atomic32_add(&tx_counter, 1);
 	return 0;
 
 }
@@ -270,7 +275,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct acceptor* acceptor
 	return 0;
 }
 
-static void
+static void __attribute((unused))
 on_sending_error(struct rte_mbuf **unsent, uint16_t count,
 	__attribute((unused)) void *userdata)
 {
@@ -281,30 +286,47 @@ on_sending_error(struct rte_mbuf **unsent, uint16_t count,
 }
 
 static void
+report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
+{
+    PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
+    int nb_tx = rte_atomic32_read(&tx_counter);
+    int nb_rx = rte_atomic32_read(&rx_counter);
+    PRINT_INFO("Throughput: tx %8d, rx %8d", nb_tx, nb_rx);
+    rte_atomic32_set(&tx_counter, 0);
+    rte_atomic32_set(&rx_counter, 0);
+    if (force_quit)
+        rte_timer_stop(tim);
+}
+
+
+static void
 lcore_main(uint8_t port)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
-    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    // uint64_t prev_tsc, diff_tsc, cur_tsc;
     unsigned nb_rx;
-    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
-            BURST_TX_DRAIN_NS;
+    // const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+    //         BURST_TX_DRAIN_NS;
 
-    prev_tsc = 0;
+    // prev_tsc = 0;
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
 
-        cur_tsc = rte_rdtsc();
+        // cur_tsc = rte_rdtsc();
         /* TX burst queue drain */
-        diff_tsc = cur_tsc - prev_tsc;
-        if (unlikely(diff_tsc > drain_tsc)) {
-            rte_eth_tx_buffer_flush(port, 0, tx_buffer);
-        }
+        // diff_tsc = cur_tsc - prev_tsc;
+        // if (unlikely(diff_tsc > drain_tsc)) {
+        //     rte_eth_tx_buffer_flush(port, 0, tx_buffer);
+        // }
 
-        prev_tsc = cur_tsc;
+        // prev_tsc = cur_tsc;
+
 		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
+	    rte_atomic32_add(&rx_counter, nb_rx);
+
 	}
 }
 
@@ -329,6 +351,7 @@ main(int argc, char *argv[])
 
     parse_args(argc, argv);
 
+	rte_timer_init(&timer);
     uint64_t hz = rte_get_timer_hz();
     PRINT_INFO("1 cycle is %3.2f ns", 1E9 / (double)hz);
 
@@ -340,15 +363,15 @@ main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
-    tx_buffer = rte_zmalloc_socket("tx_buffer",
-                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
-                rte_eth_dev_socket_id(portid));
-    if (tx_buffer == NULL)
-        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
-                (unsigned) portid);
+    // tx_buffer = rte_zmalloc_socket("tx_buffer",
+    //             RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+    //             rte_eth_dev_socket_id(portid));
+    // if (tx_buffer == NULL)
+    //     rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+    //             (unsigned) portid);
 
-    rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
-    rte_eth_tx_buffer_set_err_callback(tx_buffer, on_sending_error, NULL);
+    // rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
+    // rte_eth_tx_buffer_set_err_callback(tx_buffer, on_sending_error, NULL);
 
 	//initialize acceptor
 	struct acceptor *acceptor = acceptor_new(acceptor_config.acceptor_id);
@@ -356,6 +379,12 @@ main(int argc, char *argv[])
 	if (port_init(portid, mbuf_pool, acceptor) != 0)
 		rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
+    /* display stats every period seconds */
+    int lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
+    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+
+    rte_timer_subsystem_init();
 
 	lcore_main(portid);
 
