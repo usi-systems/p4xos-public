@@ -18,6 +18,7 @@ header_type paxos_t {
         rnd      : ROUND_SIZE;       // round number
         vrnd     : ROUND_SIZE;       // round in which an acceptor casted a vote
         acptid   : DATAPATH_SIZE;    // Switch ID
+        paxoslen : 32;               // the length of paxos_value
         paxosval : VALUE_SIZE;       // the value the acceptor voted for
     }
 }
