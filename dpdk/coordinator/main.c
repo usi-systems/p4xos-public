@@ -53,8 +53,6 @@ static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
 {
-	uint8_t l4_proto = 0;
-	union tunnel_offload_info info = { .data = 0 };
 	struct ipv4_hdr *iph;
 	struct udp_hdr *udp_hdr;
 	struct paxos_hdr *paxos_hdr;
@@ -63,14 +61,21 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
         uint64_t as_int;
         struct ether_addr as_addr;
     } dst_eth_addr;
-	parse_ethernet(phdr, &info, &l4_proto);
 
-	if (l4_proto != IPPROTO_UDP)
-		return -1;
+    int l2_len = sizeof(struct ether_hdr);
+    int l3_len = sizeof(struct ipv4_hdr);
 
-	iph = (struct ipv4_hdr *) ((char *)phdr + info.outer_l2_len);
-	udp_hdr = (struct udp_hdr *)((char *)phdr +
-			info.outer_l2_len + info.outer_l3_len);
+    iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "ip", iph, sizeof(struct ipv4_hdr));
+
+    if (iph->next_proto_id != IPPROTO_UDP)
+        return -1;
+
+    udp_hdr = (struct udp_hdr *)((char *)iph + l3_len);
+
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
 
 	if (udp_hdr->dst_port != rte_cpu_to_be_16(COORDINATOR_PORT) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
@@ -88,8 +93,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct coordinator *cord)
     iph->dst_addr = rte_cpu_to_be_32(ACCEPTOR_ADDR);
     iph->hdr_checksum = 0;
 	paxos_hdr->inst = rte_cpu_to_be_32(cord->cur_inst++);
-	pkt->l2_len = info.outer_l2_len;
-	pkt->l3_len = info.outer_l3_len;
+	pkt->l2_len = l2_len;
+	pkt->l3_len = l3_len;
 	pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);

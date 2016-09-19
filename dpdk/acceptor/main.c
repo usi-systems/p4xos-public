@@ -33,8 +33,9 @@
 #include "rte_paxos.h"
 #include "args.h"
 
+#define USE_TX_BUFFER
 
-#define BURST_TX_DRAIN_NS 10 /* TX drain every ~10ns */
+#define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -49,11 +50,15 @@ static const struct ether_addr ether_multicast = {
         (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
 
 struct rte_mempool *mbuf_pool;
-// struct rte_eth_dev_tx_buffer *tx_buffer;
+
+#ifdef USE_TX_BUFFER
+    struct rte_eth_dev_tx_buffer *tx_buffer;
+#endif
 
 static struct rte_timer timer;
 static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
 static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
+static uint32_t dropped;
 
 __attribute((unused))
 static void
@@ -81,35 +86,36 @@ static int
 paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 {
 	int ret = 0;
-	uint8_t l4_proto = 0;
-	union tunnel_offload_info info = { .data = 0 };
 	struct udp_hdr *udp_hdr;
 	struct paxos_hdr *paxos_hdr;
 	struct ether_hdr *phdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
 
-	parse_ethernet(phdr, &info, &l4_proto);
+    int l2_len = sizeof(struct ether_hdr);
+    int l3_len = sizeof(struct ipv4_hdr);
+    int l4_len = sizeof(struct udp_hdr);
 
-	if (l4_proto != IPPROTO_UDP)
-		return -1;
+    struct ipv4_hdr *iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "ip", iph, sizeof(struct ipv4_hdr));
 
-	struct ipv4_hdr *iph = (struct ipv4_hdr *)
-			((char *)phdr + info.outer_l2_len);
-	udp_hdr = (struct udp_hdr *)((char *)phdr +
-			info.outer_l2_len + info.outer_l3_len);
+    if (iph->next_proto_id != IPPROTO_UDP)
+        return -1;
 
-	if (udp_hdr->dst_port != rte_cpu_to_be_16(ACCEPTOR_PORT) &&
-			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
-		return -1;
+    udp_hdr = (struct udp_hdr *)((char *)iph + l3_len);
 
-	paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + sizeof(struct udp_hdr));
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
 
-	if (rte_get_log_level() == RTE_LOG_DEBUG) {
-		rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
-		rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
-		print_paxos_hdr(paxos_hdr);
-	}
+    if (udp_hdr->dst_port != rte_cpu_to_be_16(ACCEPTOR_PORT) &&
+            (pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
+        return -1;
 
-	struct paxos_value *v = paxos_value_new((char *)&paxos_hdr->paxosval, 32);
+    paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + l4_len);
+
+	if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
+
+    int value_len = rte_be_to_cpu_32(paxos_hdr->value_len);
 	paxos_message out;
 	switch (rte_be_to_cpu_16(paxos_hdr->msgtype)) {
 		case PAXOS_PREPARE:
@@ -121,7 +127,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
 			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
 			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
-			.value = *v };
+			.value = {0, NULL}};
 			//dump_prepare_message(&prepare);
 			ret = acceptor_receive_prepare(acceptor, &prepare, &out);
 			break;
@@ -134,8 +140,9 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 			.iid = rte_be_to_cpu_32(paxos_hdr->inst),
 			.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
 			.value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
-			.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
-			.value = *v };
+			.aid = rte_be_to_cpu_16(paxos_hdr->acptid) };
+            accept.value.paxos_value_len = value_len;
+            accept.value.paxos_value_val = (char*)&paxos_hdr->paxosval;
 			ret = acceptor_receive_accept(acceptor, &accept, &out);
 			break;
 		}
@@ -145,6 +152,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 	}
 
 	// Acceptor has cast a vote
+    size_t data_len = sizeof(struct paxos_hdr);
 	if (ret == 1) {
 		paxos_hdr->msgtype = rte_cpu_to_be_16(out.type);
 		switch (out.type) {
@@ -158,6 +166,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 				paxos_hdr->vrnd = rte_cpu_to_be_16(out.u.promise.value_ballot);
 				paxos_hdr->acptid = rte_cpu_to_be_16(out.u.promise.aid);
 				paxos_hdr->value_len = rte_cpu_to_be_32(out.u.promise.value.paxos_value_len);
+                data_len += out.u.promise.value.paxos_value_len;
 				if (out.u.promise.value.paxos_value_len != 0)
 					rte_memcpy(paxos_hdr->paxosval, out.u.promise.value.paxos_value_val,
 							out.u.promise.value.paxos_value_len);
@@ -167,6 +176,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 				rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
 					"Accepted Paxos message\n");
 				paxos_hdr->acptid = rte_cpu_to_be_16(out.u.accepted.aid);
+                data_len += out.u.accepted.value.paxos_value_len;
 				break;
 			case PAXOS_PREEMPTED:
 				rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
@@ -174,6 +184,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 				paxos_hdr->rnd = rte_cpu_to_be_16(out.u.preempted.ballot);
 				paxos_hdr->vrnd = rte_cpu_to_be_16(out.u.preempted.value_ballot);
 				paxos_hdr->acptid = rte_cpu_to_be_16(out.u.preempted.aid);
+                data_len += out.u.preempted.value.paxos_value_len;
 				break;
 			default:
 				rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
@@ -193,15 +204,14 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 
     iph->dst_addr = rte_cpu_to_be_32(LEARNER_ADDR);
     iph->hdr_checksum = 0;
-	pkt->l2_len = info.outer_l2_len;
-	pkt->l3_len = info.outer_l3_len;
-	pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
+	pkt->l2_len = l2_len;
+	pkt->l3_len = l3_len;
+    // pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
+	pkt->l4_len = rte_be_to_cpu_16(l4_len + data_len);
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->src_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
 	udp_hdr->dst_port = rte_cpu_to_be_16(LEARNER_PORT);
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-    rte_eth_tx_burst(0, 0, &pkt, 1);
-    rte_atomic32_add(&tx_counter, 1);
 	return 0;
 
 }
@@ -217,8 +227,19 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
 	for (i = 0; i < nb_pkts; i++) {
 		pkts[i]->udata64 = now;
-		if (paxos_rx_process(pkts[i], acceptor) < 0)
+		if (paxos_rx_process(pkts[i], acceptor) < 0) {
 			rte_pktmbuf_free(pkts[i]);
+        }
+        else {
+#ifdef USE_TX_BUFFER
+            int nb_tx = rte_eth_tx_buffer(0, 0, tx_buffer, pkts[i]);
+            if (nb_tx)
+                rte_atomic32_add(&tx_counter, nb_tx);
+#else
+            rte_eth_tx_burst(0, 0, &pkt, 1);
+            rte_atomic32_add(&tx_counter, 1);
+#endif
+        }
 	}
 
 	return nb_pkts;
@@ -291,9 +312,10 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
     PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
     int nb_tx = rte_atomic32_read(&tx_counter);
     int nb_rx = rte_atomic32_read(&rx_counter);
-    PRINT_INFO("Throughput: tx %8d, rx %8d", nb_tx, nb_rx);
+    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
+    dropped = 0;
     if (force_quit)
         rte_timer_stop(tim);
 }
@@ -303,25 +325,27 @@ static void
 lcore_main(uint8_t port)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
-    // uint64_t prev_tsc, diff_tsc, cur_tsc;
     unsigned nb_rx;
-    // const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
-    //         BURST_TX_DRAIN_NS;
 
-    // prev_tsc = 0;
+#ifdef USE_TX_BUFFER
+    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
+    prev_tsc = 0;
+#endif
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
-
-        // cur_tsc = rte_rdtsc();
+#ifdef USE_TX_BUFFER
         /* TX burst queue drain */
-        // diff_tsc = cur_tsc - prev_tsc;
-        // if (unlikely(diff_tsc > drain_tsc)) {
-        //     rte_eth_tx_buffer_flush(port, 0, tx_buffer);
-        // }
-
-        // prev_tsc = cur_tsc;
-
+        cur_tsc = rte_rdtsc();
+        diff_tsc = cur_tsc - prev_tsc;
+        if (unlikely(diff_tsc > drain_tsc)) {
+            unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, tx_buffer);
+            rte_atomic32_add(&tx_counter, nb_tx);
+        }
+        prev_tsc = cur_tsc;
+#endif
 		nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
@@ -363,15 +387,24 @@ main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
-    // tx_buffer = rte_zmalloc_socket("tx_buffer",
-    //             RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
-    //             rte_eth_dev_socket_id(portid));
-    // if (tx_buffer == NULL)
-    //     rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
-    //             (unsigned) portid);
+#ifdef USE_TX_BUFFER
+    tx_buffer = rte_zmalloc_socket("tx_buffer",
+                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+                rte_eth_dev_socket_id(portid));
+    if (tx_buffer == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+                (unsigned) portid);
 
-    // rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
+    rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
     // rte_eth_tx_buffer_set_err_callback(tx_buffer, on_sending_error, NULL);
+    ret = rte_eth_tx_buffer_set_err_callback(tx_buffer,
+                rte_eth_tx_buffer_count_callback,
+                &dropped);
+    if (ret < 0)
+            rte_exit(EXIT_FAILURE, "Cannot set error callback for "
+                    "tx buffer on port %u\n", (unsigned) portid);
+
+#endif
 
 	//initialize acceptor
 	struct acceptor *acceptor = acceptor_new(acceptor_config.acceptor_id);

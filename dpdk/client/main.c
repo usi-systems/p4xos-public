@@ -80,8 +80,9 @@ static const struct rte_eth_conf port_conf_default = {
 };
 
 static struct rte_timer timer;
-
-static rte_atomic32_t counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
+static uint32_t dropped;
 
 static char str[] = "Hello World";
 
@@ -139,7 +140,10 @@ generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
         /* set instance number regardless of types */
         pm.u.prepare.iid = client->cur_inst;
         add_paxos_message(&pm, pkts_burst[i], 12345, dport, dstIP);
-        rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
+        int nb_tx = rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
+        if (nb_tx)
+            rte_atomic32_add(&tx_counter, nb_tx);
+
         PRINT_DEBUG("submit instance %u", client->cur_inst);
         client->cur_inst++;
     }
@@ -171,23 +175,12 @@ check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts,
         uint16_t max_pkts __rte_unused, void *user_param __rte_unused)
 {
-    uint64_t cycles = 0;
     uint64_t now = rte_rdtsc();
     unsigned i;
 
     for (i = 0; i < nb_pkts; i++) {
+        pkts[i]->udata64 = now;
         hexdump_paxos_hdr(pkts[i]);
-        cycles += now - prev[i];
-    }
-
-    latency_numbers.total_cycles += cycles;
-    latency_numbers.total_pkts += nb_pkts;
-
-    if (latency_numbers.total_pkts > (1000 * 1000ULL)) {
-        rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
-        "Latency = %"PRIu64" cycles\n",
-        latency_numbers.total_cycles / latency_numbers.total_pkts);
-        latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
     }
     return nb_pkts;
 };
@@ -253,7 +246,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     rte_eth_promiscuous_enable(port);
 
     rte_eth_add_rx_callback(port, 0, check_return, NULL);
-    // rte_eth_add_tx_callback(port, 0, add_timestamp, NULL);
+    rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
 
     return 0;
 }
@@ -282,13 +275,14 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
         /* TX burst queue drain */
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
-            rte_eth_tx_buffer_flush(port, 0, buffer);
+            unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, buffer);
+            rte_atomic32_add(&tx_counter, nb_tx);
         }
 
         prev_tsc = cur_tsc;
 
         nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
-        rte_atomic32_add(&counter, nb_rx);
+        rte_atomic32_add(&rx_counter, nb_rx);
         /* Free packets. */
         for (i = 0; i < nb_rx; i++)
             rte_pktmbuf_free(pkts_burst[i]);
@@ -298,17 +292,18 @@ lcore_main(uint8_t port, struct client* client, struct rte_eth_dev_tx_buffer *bu
 }
 
 static void
-report_stat(struct rte_timer *tim, void *arg)
+report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
-    int *period = (int *)arg;
     PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
-    int count = rte_atomic32_read(&counter);
-    PRINT_INFO("%8d", count / *period);
-    rte_atomic32_set(&counter, 0);
-	if (force_quit)
-		rte_timer_stop(tim);
+    int nb_tx = rte_atomic32_read(&tx_counter);
+    int nb_rx = rte_atomic32_read(&rx_counter);
+    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
+    rte_atomic32_set(&tx_counter, 0);
+    rte_atomic32_set(&rx_counter, 0);
+    dropped = 0;
+    if (force_quit)
+        rte_timer_stop(tim);
 }
-
 /*
  * The main function, which does initialization and calls the per-lcore
  * functions.
@@ -362,6 +357,9 @@ main(int argc, char *argv[])
                 (unsigned) portid);
 
     rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
+    ret = rte_eth_tx_buffer_set_err_callback(tx_buffer,
+                rte_eth_tx_buffer_count_callback,
+                &dropped);
 
     /* Initialize port 0. */
     if (port_init(portid, client.mbuf_pool) != 0)
@@ -369,8 +367,7 @@ main(int argc, char *argv[])
 
     /* display stats every period seconds */
     lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
-    int period = client_config.period;
-    rte_timer_reset(&timer, period*hz, PERIODICAL, lcore_id, report_stat, &period);
+    rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
     rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
 	rte_timer_subsystem_init();
