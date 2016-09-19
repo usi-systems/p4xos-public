@@ -28,16 +28,19 @@
 #include "utils.h"
 #include "args.h"
 
-#define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
-#define FAKE_ADDR IPv4(192,168,4,198)
+#define BURST_TX_DRAIN_US 1
+#define UAKE_ADDR IPv4(192,168,4,198)
 
 struct dp_learner {
 	int num_acceptors;
 	int nb_learners;
 	int learner_id;
+    int nb_pkt_buf;
 	struct learner *paxos_learner;
-	struct rte_mempool *mbuf_pool;
+    struct rte_mempool *mbuf_pool;
+	struct rte_mempool *mbuf_tx;
     struct rte_eth_dev_tx_buffer *tx_buffer;
+    struct rte_mbuf *tx_mbufs[BURST_SIZE];
 };
 
 static const struct ether_addr mac95 = {
@@ -92,10 +95,20 @@ struct __attribute__((__packed__)) client_request {
     char content[1];
 };
 
+static void
+reset_tx_mbufs(struct dp_learner* dl, unsigned nb_tx)
+{
+    rte_atomic32_add(&tx_counter, nb_tx);
+    rte_pktmbuf_alloc_bulk(dl->mbuf_tx, dl->tx_mbufs, nb_tx);
+    dl->nb_pkt_buf = 0;
+}
+
 
 static int
-dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
+dp_learner_send(struct dp_learner* dl,
 					char* data, size_t size, struct sockaddr_in* dest) {
+
+     struct rte_mbuf *pkt = dl->tx_mbufs[dl->nb_pkt_buf++];
 	struct ipv4_hdr *iph;
 	struct udp_hdr *udp_hdr;
 	struct ether_hdr *phdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
@@ -111,11 +124,11 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
                                 char *, l2_len + l3_len + l4_len);
     rte_memcpy(datagram, data, size);
 
-
+    phdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
     // set src MAC address
 	rte_eth_macaddr_get(0, &phdr->s_addr);
 	switch (dest->sin_addr.s_addr) {
-		case 0x5f0408c0:
+		case 0x5f04a8c0:
 			ether_addr_copy(&mac95, &phdr->d_addr);
 			break;
 		case 0x6004a8c0:
@@ -128,8 +141,10 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
 			ether_addr_copy(&mac98, &phdr->d_addr);
 			break;
 		default:
-			PRINT_DEBUG("Unknown host");
+			PRINT_INFO("Unknown host %x", dest->sin_addr.s_addr);
+            print_addr(dest);
 	}
+
     iph->total_length = rte_cpu_to_be_16(l3_len + l4_len + size);
     iph->version_ihl = 0x45;
     iph->time_to_live = 64;
@@ -140,6 +155,7 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
     iph->src_addr = rte_cpu_to_be_32(FAKE_ADDR);
     iph->dst_addr = dest->sin_addr.s_addr;  // Already in network byte order
 	udp_hdr->dst_port = dest->sin_port; // Already in network byte order
+    udp_hdr->src_port = rte_cpu_to_be_16(LEARNER_PORT);
 	udp_hdr->dgram_len = rte_cpu_to_be_16(l4_len + size);
 	pkt->l2_len = l2_len;
 	pkt->l3_len = l3_len;
@@ -149,9 +165,8 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
     int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
-	if (nb_tx) {
-	    rte_atomic32_add(&tx_counter, nb_tx);
-	}
+	if (nb_tx)
+        reset_tx_mbufs(dl, nb_tx);
 	return 0;
 }
 
@@ -162,9 +177,9 @@ content_length(struct client_request *request)
 }
 
 
-static void
+static int
 deliver(unsigned int __rte_unused inst, __rte_unused char* val,
-			__rte_unused size_t size, struct rte_mbuf *pkt, void* arg) {
+			__rte_unused size_t size, void* arg) {
 
 	struct dp_learner* dl = (struct dp_learner*) arg;
     struct client_request *req = (struct client_request*)val;
@@ -174,8 +189,9 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
 
     if (cmd->command_id % dl->nb_learners == dl->learner_id) {
         // print_addr(&req->cliaddr);
-        dp_learner_send(dl, pkt, retval, content_length(req), &req->cliaddr);
+        return dp_learner_send(dl, retval, content_length(req), &req->cliaddr);
     }
+    return -1;
 }
 
 static int
@@ -240,10 +256,10 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				.value = *v,
 			};
 			ret = learner_receive_accepted(dl->paxos_learner, &ack);
-			if (ret)
-				deliver(ack.iid, ack.value.paxos_value_val,
-						ack.value.paxos_value_len, pkt, dl);
-			break;
+			if (ret) {
+				return deliver(ack.iid, ack.value.paxos_value_val,
+						ack.value.paxos_value_len, dl);
+            }
 		}
 		default:
 			PRINT_DEBUG("No handler for %u", msgtype);
@@ -262,15 +278,15 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
     for (i = 0; i < nb_pkts; i++) {
         pkts[i]->udata64 = now;
-        if (paxos_rx_process(pkts[i], dl) < 0)
-			rte_pktmbuf_free(pkts[i]);
+        paxos_rx_process(pkts[i], dl);
     }
     return nb_pkts;
 }
 
 static inline int
-port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
+port_init(uint8_t port, void* user_param)
 {
+    struct dp_learner *dl = (struct dp_learner *) user_param;
 	struct rte_eth_dev_info dev_info;
 	struct rte_eth_txconf *txconf;
 	struct rte_eth_rxconf *rxconf;
@@ -295,7 +311,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
 
 	for (q = 0; q < rx_rings; q++) {
 		retval = rte_eth_rx_queue_setup(port, q, RX_RING_SIZE,
-				rte_eth_dev_socket_id(port), rxconf, mbuf_pool);
+				rte_eth_dev_socket_id(port), rxconf, dl->mbuf_pool);
 		if (retval < 0)
 			return retval;
 	}
@@ -318,16 +334,17 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
 	return 0;
 }
 
-
 static void
 lcore_main(uint8_t port, struct dp_learner* dl)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
-    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
-            BURST_TX_DRAIN_NS;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
+            BURST_TX_DRAIN_US;
 
     prev_tsc = 0;
+
+    rte_pktmbuf_alloc_bulk(dl->mbuf_tx, dl->tx_mbufs, BURST_SIZE);
 
 	while (!force_quit) {
         cur_tsc = rte_rdtsc();
@@ -335,9 +352,8 @@ lcore_main(uint8_t port, struct dp_learner* dl)
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
             unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, dl->tx_buffer);
-            if (nb_tx) {
-	            rte_atomic32_add(&tx_counter, nb_tx);
-            }
+            if (nb_tx)
+                reset_tx_mbufs(dl, nb_tx);
         }
         prev_tsc = cur_tsc;
 
@@ -346,6 +362,9 @@ lcore_main(uint8_t port, struct dp_learner* dl)
 			continue;
         rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
 	    rte_atomic32_add(&rx_counter, nb_rx);
+        uint16_t idx = 0;
+        for (; idx < nb_rx; idx++)
+            rte_pktmbuf_free(pkts_burst[idx]);
 	}
 }
 
@@ -437,14 +456,23 @@ main(int argc, char *argv[])
 		.num_acceptors = learner_config.nb_acceptors,
 		.nb_learners = learner_config.nb_learners,
 		.learner_id = learner_config.learner_id,
+        .nb_pkt_buf = 0,
 	};
 
-	dp_learner.mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
-			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    dp_learner.mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
+            NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+            RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 
-	if (dp_learner.mbuf_pool == NULL)
-		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
+    if (dp_learner.mbuf_pool == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot create MBUF_POOL\n");
+
+    dp_learner.mbuf_tx = rte_pktmbuf_pool_create("MBUF_TX",
+            NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+            RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+	if (dp_learner.mbuf_tx == NULL)
+		rte_exit(EXIT_FAILURE, "Cannot create MBUF_TX\n");
+
 
 	dp_learner.paxos_learner = learner_new(dp_learner.num_acceptors);
 	learner_set_instance_id(dp_learner.paxos_learner, 0);
@@ -498,8 +526,8 @@ main(int argc, char *argv[])
     rte_timer_subsystem_init();
 
 
-	if (port_init(portid, dp_learner.mbuf_pool, &dp_learner) != 0)
-			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
+    if (port_init(portid, &dp_learner) != 0)
+            rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
 	lcore_main(portid, &dp_learner);
 
