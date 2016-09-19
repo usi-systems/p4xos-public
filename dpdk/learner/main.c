@@ -26,6 +26,7 @@
 #include "rte_paxos.h"
 #include "const.h"
 #include "utils.h"
+#include "args.h"
 
 #define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
 #define FAKE_ADDR IPv4(192,168,4,198)
@@ -110,7 +111,6 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
                                 char *, l2_len + l3_len + l4_len);
     rte_memcpy(datagram, data, size);
 
-    rte_hexdump(stdout, "data", datagram, size);
 
     // set src MAC address
 	rte_eth_macaddr_get(0, &phdr->s_addr);
@@ -428,11 +428,15 @@ main(int argc, char *argv[])
 		paxos_config.verbosity = PAXOS_LOG_DEBUG;
 	}
 
+    argc -= ret;
+    argv += ret;
+
+    parse_args(argc, argv);
 	//initialize learner
 	struct dp_learner dp_learner = {
-		.num_acceptors = 1,
-		.nb_learners = 1,
-		.learner_id = 0,
+		.num_acceptors = learner_config.nb_acceptors,
+		.nb_learners = learner_config.nb_learners,
+		.learner_id = learner_config.learner_id,
 	};
 
 	dp_learner.mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",

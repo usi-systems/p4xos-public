@@ -1,6 +1,10 @@
 #ifndef _RTE_PAXOS_H_
 #define _RTE_PAXOS_H_
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <inttypes.h>

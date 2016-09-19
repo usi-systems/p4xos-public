@@ -46,11 +46,13 @@ VPATH = $(SRCDIR)/../lib
 SRCS-y := main.c
 SRCS-y += utils.c
 SRCS-y += rte_paxos.c
+SRCS-y += args.c
 
 CFLAGS += $(WERROR_FLAGS)
 
 # Link libpaxos
 CFLAGS += -I$(PWD)/../include
+CFLAGS += -I$(PWD)
 LDFLAGS += -L$(PWD)/../lib
 LDLIBS += -lpaxos
 
