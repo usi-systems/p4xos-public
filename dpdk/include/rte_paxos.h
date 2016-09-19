@@ -33,6 +33,7 @@ void send_batch(struct rte_mbuf **mbufs, int count, int port_id);
 uint16_t calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused);
 int check_timer_expiration(__attribute__((unused)) void *arg);
+void print_addr(struct sockaddr_in* s);
 
 
 #ifdef __cplusplus

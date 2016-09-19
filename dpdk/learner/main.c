@@ -28,9 +28,18 @@
 #include "utils.h"
 
 
-/* learner timer for deliver */
-static struct rte_timer deliver_timer;
-static struct rte_timer hole_timer;
+struct dp_learner {
+	int num_acceptors;
+	int nb_learners;
+	int learner_id;
+	struct learner *paxos_learner;
+};
+
+#ifdef ORDER_DELIVERY
+	/* learner timer for deliver */
+	static struct rte_timer deliver_timer;
+	static struct rte_timer hole_timer;
+#endif
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
@@ -44,8 +53,48 @@ static const struct ether_addr ether_multicast = {
 
 struct rte_mempool *mbuf_pool;
 
+enum Operation {
+    GET,
+    SET
+};
+
+struct command {
+    struct timespec ts;
+    uint16_t command_id;
+    enum Operation op;
+    char content[32];
+};
+
+
+struct __attribute__((__packed__)) client_request {
+    uint16_t length;
+    struct sockaddr_in cliaddr;
+    char content[1];
+};
+
+
+static void
+deliver(unsigned int inst, __rte_unused char* val, size_t size, void* arg) {
+	__rte_unused struct dp_learner* dl = (struct dp_learner*) arg;
+	printf("deliver inst %d, size %zu\n", inst, size);
+    struct client_request *req = (struct client_request*)val;
+    /* Skip command ID and client address */
+    // char *retval = (val + sizeof(uint16_t) + sizeof(struct sockaddr_in));
+    struct command *cmd = (struct command*)(val + sizeof(struct client_request) - 1);
+
+    if (cmd->command_id % dl->nb_learners == dl->learner_id) {
+        // int n = sendto(app->paxos->sock, retval, content_length(req), 0,
+        //                 (struct sockaddr *)&req->cliaddr,
+        //                 sizeof(req->cliaddr));
+        // if (n < 0)
+        //     perror("deliver: sendto error");
+        print_addr(&req->cliaddr);
+    }
+
+}
+
 static int
-paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
+paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 {
 	int ret = 0;
 	uint8_t l4_proto = 0;
@@ -88,9 +137,9 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 			};
 			int ret;
 			paxos_message pa;
-			ret = learner_receive_promise(l, &promise, &pa.u.accept);
+			ret = learner_receive_promise(dl->paxos_learner, &promise, &pa.u.accept);
 			if (ret)
-				add_paxos_message(&pa, pkt, LEARNER_PORT, ACCEPTOR_PORT);
+				add_paxos_message(&pa, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
 			break;
 		}
 		case PAXOS_ACCEPTED: {
@@ -102,7 +151,9 @@ paxos_rx_process(struct rte_mbuf *pkt, struct learner* l)
 				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 				.value = *v,
 			};
-			learner_receive_accepted(l, &ack);
+			if (learner_receive_accepted(dl->paxos_learner, &ack))
+				deliver(ack.iid, ack.value.paxos_value_val,
+						ack.value.paxos_value_len, dl);
 			break;
 		}
 		default:
@@ -126,13 +177,13 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts,
         uint16_t max_pkts __rte_unused, void *user_param)
 {
-    struct learner* learner = (struct learner *)user_param;
+    struct dp_learner* dl = (struct dp_learner *)user_param;
     unsigned i;
     uint64_t now = rte_rdtsc();
 
     for (i = 0; i < nb_pkts; i++) {
         pkts[i]->udata64 = now;
-        paxos_rx_process(pkts[i], learner);
+        paxos_rx_process(pkts[i], dl);
     }
     return nb_pkts;
 }
@@ -224,7 +275,7 @@ lcore_main(uint8_t port)
 }
 
 
-static void
+static void __rte_unused
 check_deliver(struct rte_timer *tim,
 		void *arg)
 {
@@ -244,10 +295,10 @@ check_deliver(struct rte_timer *tim,
 		rte_timer_stop(tim);
 }
 
-static void
+static void __rte_unused
 check_holes(struct rte_timer *tim, void *arg)
 {
-	struct learner *l = (struct learner *) arg;
+	struct dp_learner *dl = (struct dp_learner *) arg;
 	unsigned lcore_id = rte_lcore_id();
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n",
@@ -255,14 +306,14 @@ check_holes(struct rte_timer *tim, void *arg)
 	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
 	unsigned from_inst;
 	unsigned to_inst;
-	if (learner_has_holes(l, &from_inst, &to_inst)) {
+	if (learner_has_holes(dl->paxos_learner, &from_inst, &to_inst)) {
 		paxos_log_debug("Learner has holes from %d to %d\n", from_inst, to_inst);
         unsigned iid;
         for (iid = from_inst; iid < to_inst; iid++) {
             paxos_message out;
             out.type = PAXOS_PREPARE;
-            learner_prepare(l, &out.u.prepare, iid);
-			add_paxos_message(&out, created_pkt, LEARNER_PORT, ACCEPTOR_PORT);
+            learner_prepare(dl->paxos_learner, &out.u.prepare, iid);
+			add_paxos_message(&out, created_pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
         }
 	}
 	/* this timer is automatically reloaded until we decide to stop it */
@@ -274,7 +325,6 @@ int
 main(int argc, char *argv[])
 {
 	uint8_t portid = 0;
-	unsigned master_core, lcore_id;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;
@@ -297,42 +347,47 @@ main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
 
 	//initialize learner
-	struct learner *learner = learner_new(NUM_ACCEPTORS);
-	learner_set_instance_id(learner, 0);
-
-	/* init RTE timer library */
-	rte_timer_subsystem_init();
-
-	/* init timer structure */
-	rte_timer_init(&deliver_timer);
-	rte_timer_init(&hole_timer);
+	struct dp_learner dp_learner = {
+		.num_acceptors = 1,
+		.nb_learners = 1,
+		.learner_id = 0,
+	};
+	dp_learner.paxos_learner = learner_new(dp_learner.num_acceptors);
+	learner_set_instance_id(dp_learner.paxos_learner, 0);
 
 	/* load deliver_timer, every second, on a slave lcore, reloaded automatically */
 	uint64_t hz = rte_get_timer_hz();
 
 	/* Call rte_timer_manage every 10ms */
 	TIMER_RESOLUTION_CYCLES = hz / 100;
-	/* master core */
-	master_core = rte_lcore_id();
+
+#ifdef ORDER_DELIVERY
+	unsigned master_core = rte_lcore_id();
+	unsigned lcore_id;
+	/* init RTE timer library */
+	rte_timer_subsystem_init();
+	/* init timer structure */
+	rte_timer_init(&deliver_timer);
+	rte_timer_init(&hole_timer);
 	/* slave core */
 	lcore_id = rte_get_next_lcore(master_core, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&deliver_timer, hz, PERIODICAL, lcore_id, check_deliver, learner);
+	rte_timer_reset(&deliver_timer, hz, PERIODICAL, lcore_id, check_deliver, &dp_learner);
 	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
-
 	/* slave core */
 	lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, learner);
+	rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, &dp_learner);
 	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+#endif
 
-	if (port_init(portid, mbuf_pool, learner) != 0)
+	if (port_init(portid, mbuf_pool, &dp_learner) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
 	lcore_main(portid);
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "free learner\n");
-	learner_free(learner);
+	learner_free(dp_learner.paxos_learner);
 	return 0;
 }
 

@@ -1,3 +1,6 @@
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 #include <rte_ip.h>
@@ -167,4 +170,9 @@ check_timer_expiration(__attribute__((unused)) void *arg)
             prev_tsc = cur_tsc;
         }
     }
+}
+
+void
+print_addr(struct sockaddr_in* s) {
+    printf("address %s, port %d\n", inet_ntoa(s->sin_addr), ntohs(s->sin_port));
 }

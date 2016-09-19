@@ -40,13 +40,15 @@ struct learner;
 struct learner* learner_new(int acceptors);
 void learner_free(struct learner* l);
 void learner_set_instance_id(struct learner* l, iid_t iid);
-void learner_receive_accepted(struct learner* l, paxos_accepted* ack);
+int learner_receive_accepted(struct learner* l, paxos_accepted* ack);
 int learner_deliver_next(struct learner* l, paxos_accepted* out);
 int learner_has_holes(struct learner* l, iid_t* from, iid_t* to);
 /* Extend learner to run phase 1 and phase 2 in recovery */
 void learner_prepare(struct learner* l, paxos_prepare* out, iid_t iid);
 int learner_receive_promise(struct learner* l, paxos_promise* promise,
     paxos_accept* accept);
+int learner_receive_preempted(struct learner* l, paxos_preempted* ack,
+    paxos_prepare* out);
 
 #ifdef __cplusplus
 }
