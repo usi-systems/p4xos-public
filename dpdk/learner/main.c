@@ -109,6 +109,9 @@ dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
     char *datagram = rte_pktmbuf_mtod_offset(pkt,
                                 char *, l2_len + l3_len + l4_len);
     rte_memcpy(datagram, data, size);
+
+    rte_hexdump(stdout, "data", datagram, size);
+
     // set src MAC address
 	rte_eth_macaddr_get(0, &phdr->s_addr);
 	switch (dest->sin_addr.s_addr) {
@@ -211,7 +214,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 	uint16_t msgtype = rte_be_to_cpu_16(paxos_hdr->msgtype);
 	switch(msgtype) {
 		case PAXOS_PROMISE: {
-			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
+            int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
+            struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
 			struct paxos_promise promise = {
 				.iid = rte_be_to_cpu_32(paxos_hdr->inst),
 				.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
@@ -226,7 +230,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 			break;
 		}
 		case PAXOS_ACCEPTED: {
-			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, 32);
+            int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
+			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
 			struct paxos_accepted ack = {
 				.iid = rte_be_to_cpu_32(paxos_hdr->inst),
 				.ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
