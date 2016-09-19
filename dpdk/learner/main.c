@@ -27,31 +27,50 @@
 #include "const.h"
 #include "utils.h"
 
+#define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
+#define FAKE_ADDR IPv4(192,168,4,198)
 
 struct dp_learner {
 	int num_acceptors;
 	int nb_learners;
 	int learner_id;
 	struct learner *paxos_learner;
+	struct rte_mempool *mbuf_pool;
+    struct rte_eth_dev_tx_buffer *tx_buffer;
 };
+
+static const struct ether_addr mac95 = {
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xd0 }
+};
+
+static const struct ether_addr mac96 = {
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xc8 }
+};
+
+static const struct ether_addr mac97 = {
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0x38 }
+};
+
+static const struct ether_addr mac98 = {
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0x35 }
+};
+
+static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
+
+static uint32_t dropped;
 
 #ifdef ORDER_DELIVERY
 	/* learner timer for deliver */
 	static struct rte_timer deliver_timer;
 	static struct rte_timer hole_timer;
 #endif
+static struct rte_timer timer;
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
 
-
-static const struct ether_addr ether_multicast = {
-	.addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
-};
-
-
-struct rte_mempool *mbuf_pool;
 
 enum Operation {
     GET,
@@ -73,44 +92,109 @@ struct __attribute__((__packed__)) client_request {
 };
 
 
+static int
+dp_learner_send(struct dp_learner* dl, struct rte_mbuf *pkt,
+					char* data, size_t size, struct sockaddr_in* dest) {
+	struct ipv4_hdr *iph;
+	struct udp_hdr *udp_hdr;
+	struct ether_hdr *phdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
+
+    int l2_len = sizeof(struct ether_hdr);
+    int l3_len = sizeof(struct ipv4_hdr);
+    int l4_len = sizeof(struct udp_hdr);
+
+    iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
+    udp_hdr = (struct udp_hdr *)((char *)iph + l3_len);
+
+    char *datagram = rte_pktmbuf_mtod_offset(pkt,
+                                char *, l2_len + l3_len + l4_len);
+    rte_memcpy(datagram, data, size);
+    // set src MAC address
+	rte_eth_macaddr_get(0, &phdr->s_addr);
+	switch (dest->sin_addr.s_addr) {
+		case 0x5f0408c0:
+			ether_addr_copy(&mac95, &phdr->d_addr);
+			break;
+		case 0x6004a8c0:
+			ether_addr_copy(&mac96, &phdr->d_addr);
+			break;
+		case 0x6104a8c0:
+			ether_addr_copy(&mac97, &phdr->d_addr);
+			break;
+		case 0x6204a8c0:
+			ether_addr_copy(&mac98, &phdr->d_addr);
+			break;
+		default:
+			PRINT_DEBUG("Unknown host");
+	}
+    iph->total_length = rte_cpu_to_be_16(l3_len + l4_len + size);
+    iph->version_ihl = 0x45;
+    iph->time_to_live = 64;
+    iph->packet_id = rte_cpu_to_be_16(rte_rdtsc());
+    iph->fragment_offset = rte_cpu_to_be_16(IPV4_HDR_DF_FLAG);
+    iph->next_proto_id = IPPROTO_UDP;
+    iph->hdr_checksum = 0;
+    iph->src_addr = rte_cpu_to_be_32(FAKE_ADDR);
+    iph->dst_addr = dest->sin_addr.s_addr;  // Already in network byte order
+	udp_hdr->dst_port = dest->sin_port; // Already in network byte order
+	udp_hdr->dgram_len = rte_cpu_to_be_16(l4_len + size);
+	pkt->l2_len = l2_len;
+	pkt->l3_len = l3_len;
+	pkt->l4_len = l4_len + size;
+    pkt->data_len = l2_len + l3_len + l4_len + size;
+    pkt->pkt_len = l2_len + l3_len + l4_len + size;
+	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
+	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
+    int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
+	if (nb_tx) {
+	    rte_atomic32_add(&tx_counter, nb_tx);
+	}
+	return 0;
+}
+
+static uint16_t
+content_length(struct client_request *request)
+{
+    return request->length - (sizeof(struct client_request) - 1);
+}
+
+
 static void
-deliver(unsigned int inst, __rte_unused char* val, size_t size, void* arg) {
-	__rte_unused struct dp_learner* dl = (struct dp_learner*) arg;
-	printf("deliver inst %d, size %zu\n", inst, size);
+deliver(unsigned int __rte_unused inst, __rte_unused char* val,
+			__rte_unused size_t size, struct rte_mbuf *pkt, void* arg) {
+
+	struct dp_learner* dl = (struct dp_learner*) arg;
     struct client_request *req = (struct client_request*)val;
     /* Skip command ID and client address */
-    // char *retval = (val + sizeof(uint16_t) + sizeof(struct sockaddr_in));
+    char *retval = (val + sizeof(uint16_t) + sizeof(struct sockaddr_in));
     struct command *cmd = (struct command*)(val + sizeof(struct client_request) - 1);
 
     if (cmd->command_id % dl->nb_learners == dl->learner_id) {
-        // int n = sendto(app->paxos->sock, retval, content_length(req), 0,
-        //                 (struct sockaddr *)&req->cliaddr,
-        //                 sizeof(req->cliaddr));
-        // if (n < 0)
-        //     perror("deliver: sendto error");
-        print_addr(&req->cliaddr);
+        // print_addr(&req->cliaddr);
+        dp_learner_send(dl, pkt, retval, content_length(req), &req->cliaddr);
     }
-
 }
 
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 {
-	int ret = 0;
-	uint8_t l4_proto = 0;
-	uint16_t outer_header_len;
-	union tunnel_offload_info info = { .data = 0 };
+	int ret = -1;
 	struct udp_hdr *udp_hdr;
 	struct paxos_hdr *paxos_hdr;
 	struct ether_hdr *phdr = rte_pktmbuf_mtod(pkt, struct ether_hdr *);
 
-	parse_ethernet(phdr, &info, &l4_proto);
+    int l2_len = sizeof(struct ether_hdr);
+    int l3_len = sizeof(struct ipv4_hdr);
+    // int l4_len = sizeof(struct udp_hdr);
 
-	if (l4_proto != IPPROTO_UDP)
-		return -1;
+    struct ipv4_hdr *iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
+    if (rte_get_log_level() == RTE_LOG_DEBUG)
+        rte_hexdump(stdout, "ip", iph, sizeof(struct ipv4_hdr));
 
-	udp_hdr = (struct udp_hdr *)((char *)phdr +
-			info.outer_l2_len + info.outer_l3_len);
+    if (iph->next_proto_id != IPPROTO_UDP)
+        return -1;
+
+    udp_hdr = (struct udp_hdr *)((char *)iph + l3_len);
 
 	if (udp_hdr->dst_port != rte_cpu_to_be_16(LEARNER_PORT) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
@@ -135,7 +219,6 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 				.value = *v,
 			};
-			int ret;
 			paxos_message pa;
 			ret = learner_receive_promise(dl->paxos_learner, &promise, &pa.u.accept);
 			if (ret)
@@ -151,25 +234,16 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 				.value = *v,
 			};
-			if (learner_receive_accepted(dl->paxos_learner, &ack))
+			ret = learner_receive_accepted(dl->paxos_learner, &ack);
+			if (ret)
 				deliver(ack.iid, ack.value.paxos_value_val,
-						ack.value.paxos_value_len, dl);
+						ack.value.paxos_value_len, pkt, dl);
 			break;
 		}
 		default:
 			PRINT_DEBUG("No handler for %u", msgtype);
 	}
-
-
-
-	outer_header_len = info.outer_l2_len + info.outer_l3_len
-		+ sizeof(struct udp_hdr) + sizeof(struct paxos_hdr);
-
-	rte_pktmbuf_adj(pkt, outer_header_len);
-
-
 	return ret;
-
 }
 
 static uint16_t
@@ -183,7 +257,8 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 
     for (i = 0; i < nb_pkts; i++) {
         pkts[i]->udata64 = now;
-        paxos_rx_process(pkts[i], dl);
+        if (paxos_rx_process(pkts[i], dl) < 0)
+			rte_pktmbuf_free(pkts[i]);
     }
     return nb_pkts;
 }
@@ -240,37 +315,32 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, void* user_param)
 
 
 static void
-lcore_main(uint8_t port)
+lcore_main(uint8_t port, struct dp_learner* dl)
 {
-	if (rte_eth_dev_socket_id(port) > 0 &&
-			rte_eth_dev_socket_id(port) !=
-				(int) rte_socket_id())
-		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-				"WARNING, port %u is on retmote NUMA node to "
-				"polling thread.\nPerformance will "
+    struct rte_mbuf *pkts_burst[BURST_SIZE];
+    uint64_t prev_tsc, diff_tsc, cur_tsc;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
 
-				"not be optimal.\n", port);
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. "
-				"[Ctrl+C to quit]\n", rte_lcore_id());
+    prev_tsc = 0;
 
-	for (;;) {
-		// Check if signal is received
-		if (force_quit)
-			break;
+	while (!force_quit) {
+        cur_tsc = rte_rdtsc();
+        /* TX burst queue drain */
+        diff_tsc = cur_tsc - prev_tsc;
+        if (unlikely(diff_tsc > drain_tsc)) {
+            unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, dl->tx_buffer);
+            if (nb_tx) {
+	            rte_atomic32_add(&tx_counter, nb_tx);
+            }
+        }
+        prev_tsc = cur_tsc;
 
-		struct rte_mbuf *bufs[BURST_SIZE];
-		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, bufs, BURST_SIZE);
+		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
         rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
-
-		const uint16_t nb_tx = rte_eth_tx_burst(port, 0, bufs, nb_rx);
-		if (unlikely(nb_tx < nb_rx)) {
-			uint16_t buf;
-
-			for (buf = nb_tx; buf < nb_rx; buf++)
-				rte_pktmbuf_free(bufs[buf]);
-		}
+	    rte_atomic32_add(&rx_counter, nb_rx);
 	}
 }
 
@@ -295,6 +365,20 @@ check_deliver(struct rte_timer *tim,
 		rte_timer_stop(tim);
 }
 
+static void
+report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
+{
+    int nb_tx = rte_atomic32_read(&tx_counter);
+    int nb_rx = rte_atomic32_read(&rx_counter);
+    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
+    rte_atomic32_set(&tx_counter, 0);
+    rte_atomic32_set(&rx_counter, 0);
+    dropped = 0;
+    if (force_quit)
+        rte_timer_stop(tim);
+}
+
+
 static void __rte_unused
 check_holes(struct rte_timer *tim, void *arg)
 {
@@ -303,7 +387,7 @@ check_holes(struct rte_timer *tim, void *arg)
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "%s() on lcore_id %i\n",
 				__func__, lcore_id);
-	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(mbuf_pool);
+	struct rte_mbuf *created_pkt = rte_pktmbuf_alloc(dl->mbuf_pool);
 	unsigned from_inst;
 	unsigned to_inst;
 	if (learner_has_holes(dl->paxos_learner, &from_inst, &to_inst)) {
@@ -339,19 +423,20 @@ main(int argc, char *argv[])
 		paxos_config.verbosity = PAXOS_LOG_DEBUG;
 	}
 
-	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
-			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
-			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-
-	if (mbuf_pool == NULL)
-		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
-
 	//initialize learner
 	struct dp_learner dp_learner = {
 		.num_acceptors = 1,
 		.nb_learners = 1,
 		.learner_id = 0,
 	};
+
+	dp_learner.mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL",
+			NUM_MBUFS, MBUF_CACHE_SIZE, 0,
+			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+
+	if (dp_learner.mbuf_pool == NULL)
+		rte_exit(EXIT_FAILURE, "Cannot create mbuf_pool\n");
+
 	dp_learner.paxos_learner = learner_new(dp_learner.num_acceptors);
 	learner_set_instance_id(dp_learner.paxos_learner, 0);
 
@@ -380,11 +465,34 @@ main(int argc, char *argv[])
 	rte_timer_reset(&hole_timer, hz, PERIODICAL, lcore_id, check_holes, &dp_learner);
 	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 #endif
+    dp_learner.tx_buffer = rte_zmalloc_socket("tx_buffer",
+                RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
+                rte_eth_dev_socket_id(portid));
+    if (dp_learner.tx_buffer == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
+                (unsigned) portid);
 
-	if (port_init(portid, mbuf_pool, &dp_learner) != 0)
+    rte_eth_tx_buffer_init(dp_learner.tx_buffer, BURST_SIZE);
+    // rte_eth_tx_buffer_set_err_callback(tx_buffer, on_sending_error, NULL);
+    ret = rte_eth_tx_buffer_set_err_callback(dp_learner.tx_buffer,
+                rte_eth_tx_buffer_count_callback,
+                &dropped);
+    if (ret < 0)
+            rte_exit(EXIT_FAILURE, "Cannot set error callback for "
+                    "tx buffer on port %u\n", (unsigned) portid);
+
+    /* display stats every period seconds */
+    int lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
+    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+
+    rte_timer_subsystem_init();
+
+
+	if (port_init(portid, dp_learner.mbuf_pool, &dp_learner) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8"\n", portid);
 
-	lcore_main(portid);
+	lcore_main(portid, &dp_learner);
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "free learner\n");
 	learner_free(dp_learner.paxos_learner);
