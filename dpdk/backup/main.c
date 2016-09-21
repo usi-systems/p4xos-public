@@ -28,8 +28,12 @@
 #include "utils.h"
 #include "args.h"
 
-#define BURST_TX_DRAIN_US 1
+#define BURST_TX_DRAIN_NS 100
 #define FAKE_ADDR IPv4(192,168,4,198)
+
+#define ETHER_ADDR_FOR_IPV4_MCAST(x)    \
+        (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
+
 
 struct dp_learner {
 	int num_acceptors;
@@ -196,6 +200,7 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
     return -1;
 }
 
+
 static int
 paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 {
@@ -258,9 +263,31 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 			break;
 		}
         case PAXOS_ACCEPT: {
+            union {
+                uint64_t as_int;
+                struct ether_addr as_addr;
+            } dst_eth_addr;
+
+            dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(ACCEPTOR_ADDR);
+            ether_addr_copy(&dst_eth_addr.as_addr, &phdr->d_addr);
+            iph->dst_addr = rte_cpu_to_be_32(ACCEPTOR_ADDR);
+            iph->hdr_checksum = 0;
+            paxos_hdr->inst = rte_cpu_to_be_32(dl->latest_accepted_iid++);
+            pkt->l2_len = l2_len;
+            pkt->l3_len = l3_len;
+            pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
+            pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
+            udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
+            udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
+            struct rte_mbuf *cloned_pkt = rte_pktmbuf_clone(pkt, dl->mbuf_tx);
+            dl->nb_pkt_buf++;
+            rte_eth_tx_buffer(0, 0, dl->tx_buffer, cloned_pkt);
+            /*
             int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
             dl->values[dl->vcount++] = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
+            */
             break;
+
         }
 		case PAXOS_ACCEPTED: {
             int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
@@ -276,11 +303,12 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 			if (ret) {
                 if (dl->latest_accepted_iid < ack.iid)
                     dl->latest_accepted_iid = ack.iid;
-
+                /*
                 paxos_message out;
                 out.type = PAXOS_PREPARE;
                 learner_prepare(dl->paxos_learner, &out.u.prepare, dl->latest_prepare_iid + 1);
                 add_paxos_message(&out, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
+                */
             }
 		}
 		default:
@@ -358,8 +386,8 @@ lcore_main(uint8_t port, struct dp_learner* dl)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
-    const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
-            BURST_TX_DRAIN_US;
+    const uint64_t drain_tsc = (rte_get_tsc_hz() + NS_PER_S - 1) / NS_PER_S *
+            BURST_TX_DRAIN_NS;
 
     prev_tsc = 0;
 
@@ -372,7 +400,8 @@ lcore_main(uint8_t port, struct dp_learner* dl)
         if (unlikely(diff_tsc > drain_tsc)) {
             unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, dl->tx_buffer);
             if (nb_tx)
-                reset_tx_mbufs(dl, nb_tx);
+                PRINT_DEBUG("Sent %u", nb_tx);
+                // reset_tx_mbufs(dl, nb_tx);
         }
         prev_tsc = cur_tsc;
 
@@ -411,11 +440,11 @@ check_primary_alive(struct rte_timer *tim, void *arg)
         return;
 
 	struct dp_learner *dl = (struct dp_learner *) arg;
-    // if (dl->latest_accepted_iid <= 0)
-    //     return;
+    if (dl->latest_accepted_iid <= 0)
+        return;
 
     PRINT_INFO("PRIMARY FAILED at iid %u", dl->latest_accepted_iid);
-
+    /*
     unsigned i;
     for (i = 0; i < BURST_SIZE; i++) {
          struct rte_mbuf *pkt = dl->tx_mbufs[dl->nb_pkt_buf++];
@@ -427,7 +456,7 @@ check_primary_alive(struct rte_timer *tim, void *arg)
         if (nb_tx)
             reset_tx_mbufs(dl, nb_tx);
     }
-        
+    */    
     dl->latest_prepare_iid += BURST_SIZE;
 	rte_timer_stop(tim);
 }
