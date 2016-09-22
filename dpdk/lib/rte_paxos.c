@@ -34,12 +34,14 @@ union {
 void print_paxos_hdr(struct paxos_hdr *p)
 {
     rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8,
-        "{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u\n",
+        "{ .msgtype=%u, .inst=%u, .rnd=%u, .vrnd=%u, .acptid=%u, .value_size=%u\n",
         rte_be_to_cpu_16(p->msgtype),
         rte_be_to_cpu_32(p->inst),
         rte_be_to_cpu_16(p->rnd),
         rte_be_to_cpu_16(p->vrnd),
-        rte_be_to_cpu_16(p->acptid));
+        rte_be_to_cpu_16(p->acptid),
+        rte_be_to_cpu_32(p->value_len)
+        );
 }
 
 uint16_t get_psd_sum(void *l3_hdr, uint16_t ethertype, uint64_t ol_flags)
@@ -113,7 +115,7 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     px->value_len = rte_cpu_to_be_32(pm->u.accept.value.paxos_value_len);
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
                 pm->u.accept.value.paxos_value_len);
-    craft_new_packet(&created_pkt, IPv4(192,168,4,95),
+    craft_new_packet(&created_pkt, IPv4(192,168,4,99),
                         dstIP, sport, dport,
                         sizeof(struct paxos_message) +
                         pm->u.accept.value.paxos_value_len, port_id);

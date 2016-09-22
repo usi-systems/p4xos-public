@@ -28,20 +28,13 @@
 
 static struct rte_timer timer;
 static struct rte_timer stat_timer;
+static bool first_time;
 
 static const struct rte_eth_conf port_conf_default = {
-	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
+    .rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
-
-static const struct ether_addr ether_multicast = {
-    .addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
-};
-
 
 static rte_atomic32_t stat = RTE_ATOMIC32_INIT(0);
-
-/* test proposer propose */
-static char command[11] = "Hello DPDK";
 
 struct rte_mempool *mbuf_pool;
 
@@ -52,7 +45,7 @@ send_paxos_message(paxos_message *pm) {
     created_pkt->l2_len = sizeof(struct ether_hdr);
     created_pkt->l3_len = sizeof(struct ipv4_hdr);
     created_pkt->l4_len = sizeof(struct udp_hdr) + sizeof(paxos_message);
-    uint64_t ol_flags = craft_new_packet(&created_pkt, IPv4(192,168,4,95), IPv4(239,3,29,73),
+    craft_new_packet(&created_pkt, IPv4(192,168,4,99), ACCEPTOR_ADDR,
             PROPOSER_PORT, ACCEPTOR_PORT, sizeof(paxos_message), port_id);
     //struct udp_hdr *udp;
     size_t udp_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
@@ -66,7 +59,7 @@ send_paxos_message(paxos_message *pm) {
     px->vrnd = rte_cpu_to_be_16(pm->u.accept.value_ballot);
     px->acptid = 0;
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val, pm->u.accept.value.paxos_value_len);
-    created_pkt->ol_flags = ol_flags;
+    created_pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
     const uint16_t nb_tx = rte_eth_tx_burst(port_id, 0, &created_pkt, 1);
     rte_pktmbuf_free(created_pkt);
     rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "Send %d messages\n", nb_tx);
@@ -78,7 +71,7 @@ proposer_preexecute(struct proposer *p)
     int i;
     paxos_message msg;
     msg.type = PAXOS_PREPARE;
-    int count = TX_RING_SIZE - proposer_prepared_count(p);
+    int count = BURST_SIZE - proposer_prepared_count(p);
     if (count <= 0)
         return;
     for (i = 0; i < count; i++) {
@@ -122,6 +115,14 @@ proposer_handle_promise(struct proposer *p, struct paxos_promise *promise)
 }
 
 static void
+proposer_handle_accept(struct proposer *p, struct paxos_accept *ack)
+{
+    proposer_propose(p, ack->value.paxos_value_val, ack->value.paxos_value_len);
+    try_accept(p);
+}
+
+
+static void
 proposer_handle_accepted(struct proposer *p, struct paxos_accepted *ack)
 {
     if (proposer_receive_accepted(p, ack)) {
@@ -129,8 +130,6 @@ proposer_handle_accepted(struct proposer *p, struct paxos_accepted *ack)
             "Reach Quorum. Instance: %d\n",
             ack->iid);
             rte_atomic32_add(&stat, 1);
-        /* Assume Receiving a new command */
-        proposer_propose(p, command, 11);
         try_accept(p);
     }
 }
@@ -155,7 +154,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct proposer* proposer)
 			info.outer_l2_len + info.outer_l3_len);
 
 	/* if UDP dst port is not either PROPOSER or LEARNER port */
-	if (!(udp_hdr->dst_port == rte_cpu_to_be_16(PROPOSER_PORT) ||
+    if (!(udp_hdr->dst_port == rte_cpu_to_be_16(PROPOSER_PORT) ||
 		udp_hdr->dst_port == rte_cpu_to_be_16(LEARNER_PORT)) &&
 			(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
 		return -1;
@@ -181,6 +180,20 @@ paxos_rx_process(struct rte_mbuf *pkt, struct proposer* proposer)
 			proposer_handle_promise(proposer, &promise);
 			break;
 		}
+        case PAXOS_ACCEPT: {
+            if (first_time) {
+                proposer_preexecute(proposer);
+                first_time = false;
+            }
+            struct paxos_accept acpt = {
+            .iid = rte_be_to_cpu_32(paxos_hdr->inst),
+            .ballot = rte_be_to_cpu_16(paxos_hdr->rnd),
+            .value_ballot = rte_be_to_cpu_16(paxos_hdr->vrnd),
+            .aid = rte_be_to_cpu_16(paxos_hdr->acptid),
+            .value = *v };
+            proposer_handle_accept(proposer, &acpt);
+            break;
+        }
 		case PAXOS_ACCEPTED: {
 			struct paxos_accepted ack = {
 			.iid = rte_be_to_cpu_32(paxos_hdr->inst),
@@ -216,8 +229,6 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 		pkts[i]->udata64 = now;
 		paxos_rx_process(pkts[i], proposer);
 	}
-
-
 	return nb_pkts;
 }
 
@@ -267,13 +278,6 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct proposer* proposer
 
 	struct ether_addr addr;
 	rte_eth_macaddr_get(port, &addr);
-	printf("Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
-			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
-			(unsigned) port,
-			addr.addr_bytes[0], addr.addr_bytes[1],
-			addr.addr_bytes[2], addr.addr_bytes[3],
-			addr.addr_bytes[4], addr.addr_bytes[5]);
-
 	rte_eth_promiscuous_enable(port);
 
 	rte_eth_add_rx_callback(port, 0, add_timestamps, proposer);
@@ -283,23 +287,9 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct proposer* proposer
 
 
 static void
-lcore_main(uint8_t port, struct proposer *p)
+lcore_main(uint8_t port, __rte_unused struct proposer *p)
 {
-	if (rte_eth_dev_socket_id(port) > 0 &&
-			rte_eth_dev_socket_id(port) !=
-				(int) rte_socket_id())
-		rte_log(RTE_LOG_WARNING, RTE_LOGTYPE_EAL,
-				"WARNING, port %u is on retmote NUMA node to "
-				"polling thread.\nPerformance will "
-				"not be optimal.\n", port);
-
-	rte_log(RTE_LOG_INFO, RTE_LOGTYPE_EAL, "\nCore %u forwarding packets. [Ctrl+C to quit]\n",
-			rte_lcore_id());
-
 	proposer_preexecute(p);
-
-	/* initial value */
-	proposer_propose(p, command, 11);
 
 	for (;;) {
 		// Check if signal is received
@@ -370,7 +360,6 @@ check_timeout(struct rte_timer *tim, void *arg)
 			__func__, out.u.prepare.iid, out.u.prepare.ballot);
 		send_paxos_message(&out);
 	}
-
 	out.type = PAXOS_ACCEPT;
 	while(timeout_iterator_accept(iter, &out.u.accept)) {
 		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8,
@@ -394,9 +383,13 @@ main(int argc, char *argv[])
 	signal(SIGINT, signal_handler);
 	force_quit = false;
 	int proposer_id = 0;
-	//paxos_config.verbosity = PAXOS_LOG_DEBUG;
-	struct proposer *proposer = proposer_new(proposer_id, NUM_ACCEPTORS);
 
+    if (rte_get_log_level() == RTE_LOG_DEBUG) {
+        paxos_config.verbosity = PAXOS_LOG_DEBUG;
+    }
+
+	struct proposer *proposer = proposer_new(proposer_id, NUM_ACCEPTORS);
+    first_time = true;
 	/* init EAL */
 	int ret = rte_eal_init(argc, argv);
 
