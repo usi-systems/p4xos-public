@@ -28,14 +28,19 @@
 #include "utils.h"
 #include "args.h"
 
+#include "leveldb_context.h"
+#include "message.h"
+
 #define BURST_TX_DRAIN_US 1
-#define UAKE_ADDR IPv4(192,168,4,198)
+#define FAKE_ADDR IPv4(192,168,4,198)
 
 struct dp_learner {
 	int num_acceptors;
 	int nb_learners;
 	int learner_id;
     int nb_pkt_buf;
+    int enable_leveldb;
+    struct leveldb_ctx *leveldb;
 	struct learner *paxos_learner;
     struct rte_mempool *mbuf_pool;
 	struct rte_mempool *mbuf_tx;
@@ -75,25 +80,6 @@ static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
 
-
-enum Operation {
-    GET,
-    SET
-};
-
-struct command {
-    struct timespec ts;
-    uint16_t command_id;
-    enum Operation op;
-    char content[32];
-};
-
-
-struct __attribute__((__packed__)) client_request {
-    uint16_t length;
-    struct sockaddr_in cliaddr;
-    char content[1];
-};
 
 static void
 reset_tx_mbufs(struct dp_learner* dl, unsigned nb_tx)
@@ -170,13 +156,6 @@ dp_learner_send(struct dp_learner* dl,
 	return 0;
 }
 
-static uint16_t
-content_length(struct client_request *request)
-{
-    return request->length - (sizeof(struct client_request) - 1);
-}
-
-
 static int
 deliver(unsigned int __rte_unused inst, __rte_unused char* val,
 			__rte_unused size_t size, void* arg) {
@@ -186,6 +165,33 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
     /* Skip command ID and client address */
     char *retval = (val + sizeof(uint16_t) + sizeof(struct sockaddr_in));
     struct command *cmd = (struct command*)(val + sizeof(struct client_request) - 1);
+
+    if (dl->enable_leveldb) {
+        char *key = cmd->content;
+        if (cmd->op == SET) {
+            char *value = cmd->content + 16;
+            paxos_log_debug("SET(%s, %s)", key, value);
+            int res = add_entry(dl->leveldb, 0, key, 16, value, 16);
+            if (res) {
+                fprintf(stderr, "Add entry failed.\n");
+            }
+        }
+        else if (cmd->op == GET) {
+            /* check if the value is stored */
+            char *stored_value = NULL;
+            size_t vsize = 0;
+            int res = get_value(dl->leveldb, key, 16, &stored_value, &vsize);
+            if (res) {
+                fprintf(stderr, "get value failed.\n");
+            }
+            else {
+                if (stored_value != NULL) {
+                    paxos_log_debug("Stored value %s, size %zu", stored_value, vsize);
+                    free(stored_value);
+                }
+            }
+        }
+    }
 
     if (cmd->command_id % dl->nb_learners == dl->learner_id) {
         // print_addr(&req->cliaddr);
@@ -456,6 +462,7 @@ main(int argc, char *argv[])
 		.num_acceptors = learner_config.nb_acceptors,
 		.nb_learners = learner_config.nb_learners,
 		.learner_id = learner_config.learner_id,
+        .enable_leveldb = learner_config.level_db,
         .nb_pkt_buf = 0,
 	};
 

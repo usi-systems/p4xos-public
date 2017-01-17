@@ -47,6 +47,8 @@ SRCS-y := main.c
 SRCS-y += utils.c
 SRCS-y += rte_paxos.c
 SRCS-y += args.c
+SRCS-y += message.c
+SRCS-y += leveldb_context.c
 
 CFLAGS += $(WERROR_FLAGS)
 
@@ -54,7 +56,7 @@ CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -I$(PWD)/../include
 CFLAGS += -I$(PWD)
 LDFLAGS += -L$(PWD)/../lib
-LDLIBS += -lpaxos
+LDLIBS += -lpaxos -lleveldb
 
 # workaround for a gcc bug with noreturn attribute
 # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=12603
