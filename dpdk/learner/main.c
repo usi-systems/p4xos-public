@@ -48,8 +48,9 @@ struct dp_learner {
     struct rte_mbuf *tx_mbufs[BURST_SIZE];
 };
 
+// Mac address of eth0 node95
 static const struct ether_addr mac95 = {
-	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xd0 }
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xba, 0xc6, 0xc6 }
 };
 
 static const struct ether_addr mac96 = {
@@ -151,9 +152,12 @@ dp_learner_send(struct dp_learner* dl,
     pkt->pkt_len = l2_len + l3_len + l4_len + size;
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-    int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
+     //    int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
+    int nb_tx = rte_eth_tx_burst(0, 0, &pkt, 1);
+
 	if (nb_tx)
         reset_tx_mbufs(dl, nb_tx);
+
 	return 0;
 }
 
@@ -195,7 +199,7 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
     }
 
     if (cmd->command_id % dl->nb_learners == dl->learner_id) {
-        // print_addr(&req->cliaddr);
+        print_addr(&req->cliaddr);
         return dp_learner_send(dl, retval, content_length(req), &req->cliaddr);
     }
     return -1;
@@ -490,6 +494,11 @@ main(int argc, char *argv[])
 	/* Call rte_timer_manage every 10ms */
 	TIMER_RESOLUTION_CYCLES = hz / 100;
 
+    /* Init LevelDB */
+
+    if (dp_learner.enable_leveldb) {
+        dp_learner.leveldb = new_leveldb_context();
+    }
 #ifdef ORDER_DELIVERY
 	unsigned master_core = rte_lcore_id();
 	unsigned lcore_id;
@@ -539,6 +548,11 @@ main(int argc, char *argv[])
 	lcore_main(portid, &dp_learner);
 
 	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "free learner\n");
+
+    /* Free LevelDB */
+    if (dp_learner.enable_leveldb) {
+        free_leveldb_context(dp_learner.leveldb);
+    }
 	learner_free(dp_learner.paxos_learner);
 	return 0;
 }
