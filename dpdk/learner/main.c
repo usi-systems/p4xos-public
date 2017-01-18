@@ -67,6 +67,7 @@ static const struct ether_addr mac98 = {
 static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
 static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
 
+static uint32_t at_second;
 static uint32_t dropped;
 
 #ifdef ORDER_DELIVERY
@@ -280,10 +281,7 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
 {
     struct dp_learner* dl = (struct dp_learner *)user_param;
     unsigned i;
-    uint64_t now = rte_rdtsc();
-
     for (i = 0; i < nb_pkts; i++) {
-        pkts[i]->udata64 = now;
         paxos_rx_process(pkts[i], dl);
     }
     return nb_pkts;
@@ -399,8 +397,9 @@ static void
 report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
     int nb_tx = rte_atomic32_read(&tx_counter);
-    int nb_rx = rte_atomic32_read(&rx_counter);
-    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
+    //int nb_rx = rte_atomic32_read(&rx_counter);
+    //PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
+    printf("%2d %8d\n", at_second++, nb_tx);
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
     dropped = 0;
@@ -439,6 +438,7 @@ int
 main(int argc, char *argv[])
 {
 	uint8_t portid = 0;
+    at_second = 0;
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;

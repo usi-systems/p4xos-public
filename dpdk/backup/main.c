@@ -34,7 +34,7 @@
 #define ETHER_ADDR_FOR_IPV4_MCAST(x)    \
         (rte_cpu_to_be_64(0x01005e000000ULL | ((x) & 0x7fffff)) >> 16)
 
-
+#define NB_VALUE_BUFFER 1024
 struct dp_learner {
 	int num_acceptors;
 	int nb_learners;
@@ -48,7 +48,7 @@ struct dp_learner {
 	struct rte_mempool *mbuf_tx;
     struct rte_eth_dev_tx_buffer *tx_buffer;
     struct rte_mbuf *tx_mbufs[BURST_SIZE];
-    struct paxos_value *values[BURST_SIZE];
+    struct paxos_value *values[NB_VALUE_BUFFER];
 };
 
 static const struct ether_addr mac95 = {
@@ -103,9 +103,31 @@ struct __attribute__((__packed__)) client_request {
 static void __rte_unused
 reset_tx_mbufs(struct dp_learner* dl, unsigned nb_tx)
 {
+    PRINT_INFO("SENT %u packets", nb_tx);
     rte_atomic32_add(&tx_counter, nb_tx);
     rte_pktmbuf_alloc_bulk(dl->mbuf_tx, dl->tx_mbufs, nb_tx);
     dl->nb_pkt_buf = 0;
+}
+
+static void
+start_recovery(struct dp_learner *dl)
+{
+    PRINT_INFO("PRIMARY FAILED at iid %u", dl->latest_accepted_iid);
+    unsigned i;
+    for (i = 1; i <= 1; i++) {
+        if (dl->nb_pkt_buf >= BURST_SIZE)
+            break;
+        struct rte_mbuf *pkt = dl->tx_mbufs[dl->nb_pkt_buf++];
+        paxos_message out;
+        out.type = PAXOS_PREPARE;
+        learner_prepare(dl->paxos_learner, &out.u.prepare, dl->latest_accepted_iid + i);
+        add_paxos_message(&out, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
+        int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
+        if (nb_tx)
+            reset_tx_mbufs(dl, nb_tx);
+        PRINT_INFO("BUFFER PAXOS_PREPARE %d\n", dl->latest_prepare_iid + i);
+    }
+    dl->latest_prepare_iid += i;
 }
 
 
@@ -236,7 +258,8 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 	}
 
 	uint16_t msgtype = rte_be_to_cpu_16(paxos_hdr->msgtype);
-	switch(msgtype) {
+    print_paxos_hdr(paxos_hdr);
+    switch(msgtype) {
 		case PAXOS_PROMISE: {
             int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
             struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
@@ -248,48 +271,42 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				.value = *v,
 			};
 			paxos_message pa;
+            pa.type = PAXOS_ACCEPT;
 			ret = learner_receive_promise(dl->paxos_learner, &promise, &pa.u.accept);
 			if (ret){
-                if (pa.u.accept.value.paxos_value_len == 0) {
+                if (pa.u.accept.value.paxos_value_len == 0 && dl->vcount > 0) {
                     int vid = dl->vcount - 1;
-                    rte_memcpy(&pa.u.accept.value.paxos_value_val,
-                                dl->values[vid]->paxos_value_val,
-                                dl->values[vid]->paxos_value_len);
+                    PRINT_INFO("vid = %d", vid);
+                    pa.u.accept.value = *dl->values[vid];
                     paxos_value_free(dl->values[vid]);
                     dl->vcount--;
                 }
-				add_paxos_message(&pa, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
+                uint16_t sport = rte_be_to_cpu_16(udp_hdr->src_port);
+                struct rte_mbuf* cloned = rte_pktmbuf_clone(pkt, dl->mbuf_tx);
+                add_paxos_message(&pa, cloned, sport, ACCEPTOR_PORT, ACCEPTOR_ADDR);
+                int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, cloned);
+                if (nb_tx)
+                    reset_tx_mbufs(dl, nb_tx);
+                PRINT_INFO("SEND PAXOS_ACCEPT");
             }
 			break;
 		}
         case PAXOS_ACCEPT: {
-            union {
-                uint64_t as_int;
-                struct ether_addr as_addr;
-            } dst_eth_addr;
-
-            dst_eth_addr.as_int = ETHER_ADDR_FOR_IPV4_MCAST(ACCEPTOR_ADDR);
-            ether_addr_copy(&dst_eth_addr.as_addr, &phdr->d_addr);
-            iph->dst_addr = rte_cpu_to_be_32(ACCEPTOR_ADDR);
-            iph->hdr_checksum = 0;
-            paxos_hdr->inst = rte_cpu_to_be_32(dl->latest_accepted_iid++);
-            pkt->l2_len = l2_len;
-            pkt->l3_len = l3_len;
-            pkt->l4_len = rte_be_to_cpu_16(udp_hdr->dgram_len);
-            pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
-            udp_hdr->dst_port = rte_cpu_to_be_16(ACCEPTOR_PORT);
-            udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-            struct rte_mbuf *cloned_pkt = rte_pktmbuf_clone(pkt, dl->mbuf_tx);
-            dl->nb_pkt_buf++;
-            rte_eth_tx_buffer(0, 0, dl->tx_buffer, cloned_pkt);
-            /*
             int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
-            dl->values[dl->vcount++] = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
-            */
+            if (vsize > 0 && dl->vcount < NB_VALUE_BUFFER) {
+                PRINT_INFO("ADDED CLIENT VALUE");
+                dl->values[dl->vcount++] = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
+            }
+
+            if (primary_alive) {
+                start_recovery(dl);
+                primary_alive = false;
+            }
             break;
 
         }
 		case PAXOS_ACCEPTED: {
+            PRINT_INFO("RECEIVED PAXOS_ACCEPTED");
             int vsize = rte_be_to_cpu_32(paxos_hdr->value_len);
 			struct paxos_value *v = paxos_value_new((char *)paxos_hdr->paxosval, vsize);
 			struct paxos_accepted ack = {
@@ -301,14 +318,22 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 			};
 			ret = learner_receive_accepted(dl->paxos_learner, &ack);
 			if (ret) {
-                if (dl->latest_accepted_iid < ack.iid)
+                if (dl->latest_accepted_iid < ack.iid) {
                     dl->latest_accepted_iid = ack.iid;
-                /*
+                }
+                if (dl->latest_prepare_iid < ack.iid) {
+                    dl->latest_prepare_iid = ack.iid;
+                }
                 paxos_message out;
                 out.type = PAXOS_PREPARE;
                 learner_prepare(dl->paxos_learner, &out.u.prepare, dl->latest_prepare_iid + 1);
-                add_paxos_message(&out, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
-                */
+                struct rte_mbuf* cloned = rte_pktmbuf_clone(pkt, dl->mbuf_tx);
+                add_paxos_message(&out, cloned, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
+                int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, cloned);
+                if (nb_tx)
+                    reset_tx_mbufs(dl, nb_tx);
+                dl->latest_prepare_iid++;
+                PRINT_INFO("SEND ANOTHER PAXOS_PREPARE");
             }
 		}
 		default:
@@ -400,15 +425,13 @@ lcore_main(uint8_t port, struct dp_learner* dl)
         if (unlikely(diff_tsc > drain_tsc)) {
             unsigned nb_tx = rte_eth_tx_buffer_flush(port, 0, dl->tx_buffer);
             if (nb_tx)
-                PRINT_DEBUG("Sent %u", nb_tx);
-                // reset_tx_mbufs(dl, nb_tx);
+                reset_tx_mbufs(dl, nb_tx);
         }
         prev_tsc = cur_tsc;
 
 		const uint16_t nb_rx = rte_eth_rx_burst(port, 0, pkts_burst, BURST_SIZE);
 		if (unlikely(nb_rx == 0))
 			continue;
-        primary_alive = true;
         rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER, "Received %8d packets\n", nb_rx);
 	    rte_atomic32_add(&rx_counter, nb_rx);
         uint16_t idx = 0;
@@ -427,39 +450,10 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
     dropped = 0;
-    primary_alive = false;
     if (force_quit)
         rte_timer_stop(tim);
 }
 
-
-static void __rte_unused
-check_primary_alive(struct rte_timer *tim, void *arg)
-{
-    if (primary_alive)
-        return;
-
-	struct dp_learner *dl = (struct dp_learner *) arg;
-    if (dl->latest_accepted_iid <= 0)
-        return;
-
-    PRINT_INFO("PRIMARY FAILED at iid %u", dl->latest_accepted_iid);
-    /*
-    unsigned i;
-    for (i = 0; i < BURST_SIZE; i++) {
-         struct rte_mbuf *pkt = dl->tx_mbufs[dl->nb_pkt_buf++];
-        paxos_message out;
-        out.type = PAXOS_PREPARE;
-        learner_prepare(dl->paxos_learner, &out.u.prepare, dl->latest_accepted_iid + i);
-        add_paxos_message(&out, pkt, LEARNER_PORT, ACCEPTOR_PORT, ACCEPTOR_ADDR);
-        int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
-        if (nb_tx)
-            reset_tx_mbufs(dl, nb_tx);
-    }
-    */    
-    dl->latest_prepare_iid += BURST_SIZE;
-	rte_timer_stop(tim);
-}
 
 int
 main(int argc, char *argv[])
@@ -468,7 +462,6 @@ main(int argc, char *argv[])
 	signal(SIGTERM, signal_handler);
 	signal(SIGINT, signal_handler);
 	force_quit = false;
-    primary_alive = true;
 	/* init EAL */
 	int ret = rte_eal_init(argc, argv);
 
@@ -481,13 +474,15 @@ main(int argc, char *argv[])
 
     argc -= ret;
     argv += ret;
-
+    primary_alive = true;
     parse_args(argc, argv);
 	//initialize learner
 	struct dp_learner dp_learner = {
 		.num_acceptors = learner_config.nb_acceptors,
 		.nb_learners = learner_config.nb_learners,
 		.learner_id = learner_config.learner_id,
+        .latest_prepare_iid = 0,
+        .latest_accepted_iid = 0,
         .nb_pkt_buf = 0,
         .vcount = 0,
 	};
@@ -521,12 +516,6 @@ main(int argc, char *argv[])
 	rte_timer_subsystem_init();
 	/* init timer structure */
 	rte_timer_init(&coord_timer);
-
-	/* slave core */
-	lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
-	rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER1, "lcore_id: %d\n", lcore_id);
-	rte_timer_reset(&coord_timer, hz, PERIODICAL, lcore_id, check_primary_alive, &dp_learner);
-	rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
     dp_learner.tx_buffer = rte_zmalloc_socket("tx_buffer",
                 RTE_ETH_TX_BUFFER_SIZE(BURST_SIZE), 0,
