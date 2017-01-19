@@ -53,20 +53,25 @@ static const struct ether_addr mac95 = {
 	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xba, 0xc6, 0xc6 }
 };
 
+// Mac address of eth10 node96
 static const struct ether_addr mac96 = {
-	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0xc8 }
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xba, 0xc2, 0x40 }
 };
 
+// Mac address of eth21 node97
 static const struct ether_addr mac97 = {
-	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0x38 }
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xba, 0xc6, 0xad }
 };
 
+// Mac address of eth1 node98
 static const struct ether_addr mac98 = {
-	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xa3, 0x25, 0x35 }
+	.addr_bytes= { 0x0c, 0xc4, 0x7a, 0xba, 0xc0, 0x08 }
 };
 
 static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
 static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
+
+static rte_atomic32_t consensus_counter = RTE_ATOMIC32_INIT(0);
 
 static uint32_t at_second;
 static uint32_t dropped;
@@ -198,8 +203,10 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
         }
     }
 
-    if (cmd->command_id % dl->nb_learners == dl->learner_id) {
-        print_addr(&req->cliaddr);
+    /* TEST: only the first learner responds */
+    // if (cmd->command_id % dl->nb_learners == dl->learner_id) {
+    if (dl->learner_id == 0) {
+        // print_addr(&req->cliaddr);
         return dp_learner_send(dl, retval, content_length(req), &req->cliaddr);
     }
     return -1;
@@ -266,10 +273,13 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				.aid = rte_be_to_cpu_16(paxos_hdr->acptid),
 				.value = *v,
 			};
-			ret = learner_receive_accepted(dl->paxos_learner, &ack);
-			if (ret) {
-				return deliver(ack.iid, ack.value.paxos_value_val,
-						ack.value.paxos_value_len, dl);
+			learner_receive_accepted(dl->paxos_learner, &ack);
+            struct paxos_accepted out;
+            int consensus = learner_deliver_next(dl->paxos_learner, &out);
+			if (consensus) {
+                rte_atomic32_add(&consensus_counter, 1);
+				return deliver(out.iid, out.value.paxos_value_val,
+						out.value.paxos_value_len, dl);
             }
 		}
 		default:
@@ -338,7 +348,8 @@ port_init(uint8_t port, void* user_param)
 	rte_eth_promiscuous_enable(port);
 
 	rte_eth_add_rx_callback(port, 0, add_timestamps, user_param);
-	rte_eth_add_tx_callback(port, 0, calc_latency, user_param);
+    /* Disable calculate processing latency */
+	// rte_eth_add_tx_callback(port, 0, calc_latency, user_param);
 	return 0;
 }
 
@@ -389,9 +400,11 @@ check_deliver(struct rte_timer *tim,
 
 	struct paxos_accepted out;
 	int consensus = learner_deliver_next(l, &out);
-	if (consensus)
-		rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER8, "consensus reached: %d\n",
+	if (consensus) {
+		rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_USER8, "consensus reached: %d\n",
 			consensus);
+        rte_atomic32_add(&consensus_counter, 1);
+    }
 	/* this timer is automatically reloaded until we decide to stop it */
 	if (force_quit)
 		rte_timer_stop(tim);
@@ -400,10 +413,12 @@ check_deliver(struct rte_timer *tim,
 static void
 report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
-    int nb_tx = rte_atomic32_read(&tx_counter);
+    // int nb_tx = rte_atomic32_read(&tx_counter);
+    int nb_consensus = rte_atomic32_read(&consensus_counter);
     //int nb_rx = rte_atomic32_read(&rx_counter);
     //PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
-    printf("%2d %8d\n", at_second++, nb_tx);
+    printf("%2d %8d\n", at_second++, nb_consensus);
+    rte_atomic32_set(&consensus_counter, 0);
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
     dropped = 0;
@@ -499,9 +514,11 @@ main(int argc, char *argv[])
     if (dp_learner.enable_leveldb) {
         dp_learner.leveldb = new_leveldb_context();
     }
-#ifdef ORDER_DELIVERY
-	unsigned master_core = rte_lcore_id();
+
 	unsigned lcore_id;
+
+#ifdef ORDER_DELIVERY
+    unsigned master_core = rte_lcore_id();
 	/* init RTE timer library */
 	rte_timer_subsystem_init();
 	/* init timer structure */
@@ -535,7 +552,7 @@ main(int argc, char *argv[])
                     "tx buffer on port %u\n", (unsigned) portid);
 
     /* display stats every period seconds */
-    int lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
     rte_timer_reset(&timer, hz, PERIODICAL, lcore_id, report_stat, NULL);
     rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
