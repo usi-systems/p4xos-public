@@ -11,7 +11,7 @@ echo 2048 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepag
 
 modprobe uio_pci_generic
 
-sudo ip link set dev eth11 down
+sudo ip link set dev eth2 down
 
 $RTE_SDK/usertools/dpdk-devbind.py --status
 $RTE_SDK/usertools/dpdk-devbind.py --bind=uio_pci_generic 82:00.1
