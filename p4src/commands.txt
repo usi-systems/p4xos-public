@@ -1,0 +1,8 @@
+table_set_default round_tbl read_round
+table_set_default round_tbl read_round
+table_set_default drop_tbl _nop
+table_add drop_tbl _drop 1 =>
+table_add learner_tbl handle_2b 3 =>
+table_add reset_tbl handle_new_value 3 =>
+table_add forward_tbl forward 1 => 2
+table_add forward_tbl forward 2 => 1

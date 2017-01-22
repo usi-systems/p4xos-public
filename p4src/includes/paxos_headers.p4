@@ -2,6 +2,10 @@
 #define _PAXOS_HEADERS_P4_
 
 // Headers for Paxos
+#define PAXOS_1A 0
+#define PAXOS_1B 1
+#define PAXOS_2A 2
+#define PAXOS_2B 3
 
 #define MSGTYPE_SIZE 16
 #define INSTANCE_SIZE 32
