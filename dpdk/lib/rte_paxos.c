@@ -115,7 +115,7 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     px->value_len = rte_cpu_to_be_32(pm->u.accept.value.paxos_value_len);
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
                 pm->u.accept.value.paxos_value_len);
-    craft_new_packet(&created_pkt, IPv4(192,168,4,99),
+    craft_new_packet(&created_pkt, IPv4(192,168,4,97),
                         dstIP, sport, dport,
                         sizeof(struct paxos_message) +
                         pm->u.accept.value.paxos_value_len, port_id);
@@ -164,7 +164,7 @@ check_timer_expiration(__attribute__((unused)) void *arg)
     rte_log(RTE_LOG_DEBUG, RTE_LOGTYPE_TIMER,
             "Starting %s on core %u\n", __func__, lcore_id);
 
-    while(1) {
+    while(!force_quit) {
         cur_tsc = rte_rdtsc();
         diff_tsc = cur_tsc - prev_tsc;
         if (diff_tsc > TIMER_RESOLUTION_CYCLES) {
@@ -172,6 +172,7 @@ check_timer_expiration(__attribute__((unused)) void *arg)
             prev_tsc = cur_tsc;
         }
     }
+    return 0;
 }
 
 void

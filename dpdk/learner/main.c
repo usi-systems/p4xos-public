@@ -31,6 +31,8 @@
 #include "leveldb_context.h"
 #include "message.h"
 
+#define NS_PER_S 1000000000
+
 #define BURST_TX_DRAIN_US 1
 #define FAKE_ADDR IPv4(192,168,4,198)
 
@@ -180,7 +182,7 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
         char *key = cmd->content;
         if (cmd->op == SET) {
             char *value = cmd->content + 16;
-            paxos_log_debug("SET(%s, %s)", key, value);
+            PRINT_DEBUG("SET(%s, %s)", key, value);
             int res = add_entry(dl->leveldb, 0, key, 16, value, 16);
             if (res) {
                 fprintf(stderr, "Add entry failed.\n");
@@ -196,7 +198,7 @@ deliver(unsigned int __rte_unused inst, __rte_unused char* val,
             }
             else {
                 if (stored_value != NULL) {
-                    paxos_log_debug("Stored value %s, size %zu", stored_value, vsize);
+                    PRINT_DEBUG("Stored value %s, size %zu", stored_value, vsize);
                     free(stored_value);
                 }
             }
@@ -281,6 +283,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 				return deliver(out.iid, out.value.paxos_value_val,
 						out.value.paxos_value_len, dl);
             }
+            break;
 		}
 		default:
 			PRINT_DEBUG("No handler for %u", msgtype);
