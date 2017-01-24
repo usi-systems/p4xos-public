@@ -9,7 +9,6 @@ header_type ingress_metadata_t {
         set_drop : 1;
         count : 8;
         acceptors : 8;
-        acceptor_id : 8;
     }
 }
 
@@ -27,7 +26,7 @@ register values_register {
 
 
 // Count the number of acceptors has cast a vote
-register count_register {
+register history2B {
     width : 8;
     instance_count : INSTANCE_COUNT;
 }
@@ -46,8 +45,7 @@ action _drop() {
 action read_round() {
     register_read(local_metadata.round, rounds_register, paxos.inst);
     modify_field(local_metadata.set_drop, 1);
-    register_read(local_metadata.acceptors, count_register, paxos.inst);
-    modify_field(local_metadata.acceptor_id, local_metadata.acceptors & (1 << paxos.acptid));
+    register_read(local_metadata.acceptors, history2B, paxos.inst);
 }
 
 table round_tbl {
@@ -60,16 +58,15 @@ action handle_2b() {
     // TODO: the 2 lines below only needed for the first time
     register_write(rounds_register, paxos.inst, paxos.rnd);
     register_write(values_register, paxos.inst, paxos.paxosval);
-    // Increase the count of accepted votes
+    // Acknowledge accepted vote
     modify_field(local_metadata.acceptors, local_metadata.acceptors | (1 << paxos.acptid));
-    register_write(count_register, paxos.inst, local_metadata.acceptors);
-
+    register_write(history2B, paxos.inst, local_metadata.acceptors);
 }
 
 action handle_new_value() {
     register_write(rounds_register, paxos.inst, paxos.rnd);
     register_write(values_register, paxos.inst, paxos.paxosval);
-    register_write(count_register, paxos.inst, 1 << paxos.acptid);
+    register_write(history2B, paxos.inst, 1 << paxos.acptid);
 }
 
 table learner_tbl {
@@ -111,11 +108,14 @@ control ingress {
 
         if (valid(paxos)) {
             apply(round_tbl);
-            if (local_metadata.round == paxos.rnd and local_metadata.acceptor_id == 0) {
-                apply(learner_tbl);
-            } else if (local_metadata.round < paxos.rnd) {
+            if (paxos.rnd > local_metadata.round) {
                 apply(reset_tbl);
             }
+            else if (paxos.rnd == local_metadata.round) {
+                apply(learner_tbl);
+            }
+            // TODO: replace this with counting number of 1 in Binary
+            // e.g count_number_of_1_binary(local_metadata.acceptors) == MAJORITY
             if (local_metadata.acceptors == 6       // 0b110
                 or local_metadata.acceptors == 5    // 0b101
                 or local_metadata.acceptors == 3)   // 0b011
