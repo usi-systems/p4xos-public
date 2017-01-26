@@ -9,7 +9,7 @@ void print_usage(const char *prgname)
                    "  -t TEST_ROLE: [ 0: PROPOSER, 1: COORDINATOR, 2: ACCEPTOR,"
                    "3: LEARNER]\n"
                    "  -p period: the period of stat report\n"
-                   "  -o outstanding: the number of outstanding packets",
+                   "  -o outstanding: the number of outstanding packets\n"
                    "  -w: enable write operation",
                    prgname);
 }

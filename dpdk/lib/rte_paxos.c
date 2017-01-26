@@ -10,6 +10,8 @@
 #include "rte_paxos.h"
 #include "const.h"
 
+#include <rte_hexdump.h>
+
 struct {
     uint64_t total_cycles;
     uint64_t total_pkts;
@@ -88,14 +90,13 @@ void craft_new_packet(struct rte_mbuf **created_pkt, uint32_t srcIP, uint32_t ds
     udp = (struct udp_hdr *)((unsigned char*)iph + sizeof(struct ipv4_hdr));
     udp->src_port = rte_cpu_to_be_16(sport);
     udp->dst_port = rte_cpu_to_be_16(dport);
-    udp->dgram_len = rte_cpu_to_be_16(data_size);
+    udp->dgram_len = rte_cpu_to_be_16(sizeof(struct udp_hdr) + data_size);
 
     (*created_pkt)->l2_len = sizeof(struct ether_hdr);
     (*created_pkt)->l3_len = sizeof(struct ipv4_hdr);
     (*created_pkt)->l4_len = sizeof(struct udp_hdr) + data_size;
     (*created_pkt)->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
     udp->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, (*created_pkt)->ol_flags);
-
 }
 
 void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
@@ -111,7 +112,7 @@ void add_paxos_message(struct paxos_message *pm, struct rte_mbuf *created_pkt,
     px->inst = rte_cpu_to_be_32(pm->u.accept.iid);
     px->rnd = rte_cpu_to_be_16(pm->u.accept.ballot);
     px->vrnd = rte_cpu_to_be_16(pm->u.accept.value_ballot);
-    px->acptid = rte_cpu_to_be_16(0);
+    px->acptid = rte_cpu_to_be_16(pm->u.accept.aid);
     px->value_len = rte_cpu_to_be_32(pm->u.accept.value.paxos_value_len);
     rte_memcpy(px->paxosval, pm->u.accept.value.paxos_value_val,
                 pm->u.accept.value.paxos_value_len);
