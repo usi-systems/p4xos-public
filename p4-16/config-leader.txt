@@ -1,0 +1,4 @@
+table_add transport_tbl _drop 1 =>
+table_add forward_tbl forward => 1
+table_add leader_tbl increase_instance 2 =>
+table_add leader_tbl reset_instance 5 =>

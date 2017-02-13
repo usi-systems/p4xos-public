@@ -5,7 +5,12 @@ typedef bit<48> EthernetAddress;
 typedef bit<32> IPv4Address;
 typedef bit<4> PortId;
 
+// Physical Ports
 const PortId DROP_PORT = 0xF;
+// UDP Ports
+const bit<16> ACCEPTOR_PORT = 0x8889;
+const bit<16> LEARNER_PORT = 0x8890;
+const bit<16> APPLICATION_PORT = 56789;
 // standard headers
 header ethernet_t {
     EthernetAddress dstAddr;
@@ -61,35 +66,21 @@ header paxos_t {
 }
 
 struct headers {
-    @name("ethernet")
     ethernet_t ethernet;
-    @name("ipv4")
     ipv4_t ipv4;
-    @name("udp")
     udp_t udp;
-    @name("paxos")
     paxos_t paxos;
 }
 
-struct ingress_metadata_t {
+struct paxos_metadata_t {
     bit<ROUND_SIZE> round;
     bit<1> set_drop;
     bit<8> ack_count;
     bit<8> ack_acceptors;
 }
 
-struct intrinsic_metadata_t {
-    bit<48> ingress_global_timestamp;
-    bit<32> lf_field_list;
-    bit<16> mcast_grp;
-    bit<16> egress_rid;
-}
-
 struct metadata {
-    @name("ingress_metadata")
-    ingress_metadata_t   local_metadata;
-    @name("intrinsic_metadata")
-    intrinsic_metadata_t intrinsic_metadata;
+    paxos_metadata_t   paxos_metadata;
 }
 
 #endif

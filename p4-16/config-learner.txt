@@ -1,0 +1,3 @@
+table_add transport_tbl _drop 1 =>
+table_add forward_tbl forward => 1
+table_add learner_tbl handle_2b 3 =>
