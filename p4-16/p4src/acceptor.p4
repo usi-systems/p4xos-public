@@ -9,18 +9,13 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
     register<bit<ROUND_SIZE>>(INSTANCE_COUNT) registerVRound;
     register<bit<VALUE_SIZE>>(INSTANCE_COUNT) registerValue;
 
+    action _drop() {
+        mark_to_drop();
+    }
+
     action read_round() {
         registerRound.read(meta.paxos_metadata.round, hdr.paxos.inst);
         meta.paxos_metadata.set_drop = 1;
-    }
-
-    table round_tbl {
-        key = {}
-        actions = {
-            read_round;
-        }
-        size = 1;
-        default_action = read_round;
     }
 
     action handle_1a() {
@@ -47,62 +42,50 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         actions = {
             handle_1a;
             handle_2a;
-            NoAction;
+            _drop;
         }
         size = 4;
-        default_action = NoAction;
+        default_action = _drop();
     }
 
-    action forward(PortId port) {
+    action forward(PortId port, bit<16> learnerPort) {
         standard_metadata.egress_spec = port;
-        meta.paxos_metadata.set_drop = 0;
-    }
-
-    table forward_tbl {
-        key = {meta.paxos_metadata.set_drop : exact; }
-        actions = {
-            forward;
-            NoAction;
-        }
-        size = 2;
-        default_action = NoAction();
-    }
-
-    apply {
-        if (hdr.ipv4.isValid()) {
-            if (hdr.paxos.isValid()) {
-                round_tbl.apply();
-                if (hdr.paxos.rnd >= meta.paxos_metadata.round) {
-                    acceptor_tbl.apply();
-                }
-            }
-            forward_tbl.apply();
-        }
-    }
-}
-
-control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
-
-    action _drop() {
-        mark_to_drop();
-    }
-
-    action set_UDPdstPort(bit<16> dstPort) {
-        hdr.udp.dstPort = dstPort;
+        hdr.udp.dstPort = learnerPort;
     }
 
     table transport_tbl {
         key = { meta.paxos_metadata.set_drop : exact; }
         actions = {
             _drop;
-             set_UDPdstPort;
+             forward;
         }
         size = 2;
         default_action =  _drop();
     }
 
     apply {
-        transport_tbl.apply();
+        if (hdr.ipv4.isValid()) {
+            if (hdr.paxos.isValid()) {
+                read_round();
+                if (hdr.paxos.rnd >= meta.paxos_metadata.round) {
+                    acceptor_tbl.apply();
+                    transport_tbl.apply();
+                }
+            }
+        }
+    }
+}
+
+control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
+    table place_holder_table {
+        actions = {
+            NoAction;
+        }
+        size = 2;
+        default_action = NoAction();
+    }
+    apply {
+        place_holder_table.apply();
     }
 }
 

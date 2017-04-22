@@ -6,14 +6,22 @@
 control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
     register<bit<INSTANCE_SIZE>>(1) registerInstance;
 
+    action _drop() {
+        mark_to_drop();
+    }
+
     action increase_instance() {
         registerInstance.read(hdr.paxos.inst, 0);
         hdr.paxos.inst = hdr.paxos.inst + 1;
         registerInstance.write(0, hdr.paxos.inst);
+        meta.paxos_metadata.set_drop = 0;
+
     }
 
     action reset_instance() {
         registerInstance.write(0, 0);
+        // Do not need to forward this message
+        meta.paxos_metadata.set_drop = 1;
     }
 
     table leader_tbl {
@@ -21,59 +29,49 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         actions = {
             increase_instance;
             reset_instance;
-            NoAction;
+            _drop;
         }
         size = 4;
-        default_action = NoAction();
+        default_action = _drop();
     }
-    action forward(PortId port) {
+
+
+    action forward(PortId port, bit<16> acceptorPort) {
         standard_metadata.egress_spec = port;
-        meta.paxos_metadata.set_drop = 0;
-    }
-
-    table forward_tbl {
-        key = {}
-        actions = {
-            forward;
-        }
-        size = 1;
-        default_action = forward(DROP_PORT);
-    }
-
-    apply {
-        if (hdr.ipv4.isValid()) {
-            if (hdr.paxos.isValid()) {
-                leader_tbl.apply();
-            }
-            forward_tbl.apply();
-        }
-    }
-}
-
-control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
-
-    action _drop() {
-        mark_to_drop();
-    }
-
-    action set_UDPdstPort(bit<16> dstPort) {
-        hdr.udp.dstPort = dstPort;
+        hdr.udp.dstPort = acceptorPort;
     }
 
     table transport_tbl {
         key = { meta.paxos_metadata.set_drop : exact; }
         actions = {
             _drop;
-             set_UDPdstPort;
+             forward;
         }
         size = 2;
-        default_action =  set_UDPdstPort(ACCEPTOR_PORT);
+        default_action =  _drop();
     }
 
     apply {
-        transport_tbl.apply();
+        if (hdr.ipv4.isValid()) {
+            if (hdr.paxos.isValid()) {
+                leader_tbl.apply();
+                transport_tbl.apply();
+            }
+        }
     }
 }
 
+control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
+    table place_holder_table {
+        actions = {
+            NoAction;
+        }
+        size = 2;
+        default_action = NoAction();
+    }
+    apply {
+        place_holder_table.apply();
+    }
+}
 
 V1Switch(TopParser(), verifyChecksum(), ingress(), egress(), computeChecksum(), TopDeparser()) main;
