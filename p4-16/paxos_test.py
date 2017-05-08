@@ -35,7 +35,7 @@ def handle(x):
 
 
 def server(args):
-    sniff(iface = args.interface, filter= 'udp', prn = lambda x: handle(x))
+    sniff(iface = args.interface, filter= 'icmp or udp', prn = lambda x: handle(x))
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='P4Paxos demo')

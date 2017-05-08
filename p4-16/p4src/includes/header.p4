@@ -18,6 +18,18 @@ header ethernet_t {
     bit<16> etherType;
 }
 
+header arp_t {
+    bit<16> hrd;
+    bit<16> pro;
+    bit<8> hln;
+    bit<8> pln;
+    bit<16> op;
+    bit<48> sha;
+    bit<32> spa;
+    bit<48> tha;
+    bit<32> tpa;
+}
+
 header ipv4_t {
     bit<4> version;
     bit<4> ihl;
@@ -31,6 +43,15 @@ header ipv4_t {
     bit<16> hdrChecksum;
     IPv4Address srcAddr;
     IPv4Address dstAddr;
+}
+
+header icmp_t {
+    bit<8> icmpType;
+    bit<8> icmpCode;
+    bit<16> hdrChecksum;
+    bit<16> identifier;
+    bit<16> seqNumber;
+    bit<256> payload;
 }
 
 header udp_t {
@@ -67,7 +88,9 @@ header paxos_t {
 
 struct headers {
     ethernet_t ethernet;
+    arp_t arp;
     ipv4_t ipv4;
+    icmp_t icmp;
     udp_t udp;
     paxos_t paxos;
 }

@@ -9,13 +9,15 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
     register<bit<ROUND_SIZE>>(INSTANCE_COUNT) registerVRound;
     register<bit<VALUE_SIZE>>(INSTANCE_COUNT) registerValue;
 
+    register<bit<48>>(1) learner_mac_address;
+    register<bit<32>>(1) learner_address;
+
     action _drop() {
         mark_to_drop();
     }
 
     action read_round() {
         registerRound.read(meta.paxos_metadata.round, hdr.paxos.inst);
-        meta.paxos_metadata.set_drop = 1;
     }
 
     action handle_1a() {
@@ -24,8 +26,6 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         registerValue.read(hdr.paxos.paxosval, hdr.paxos.inst);
         registerAcceptorID.read(hdr.paxos.acptid, 0);
         registerRound.write(hdr.paxos.inst, hdr.paxos.rnd);
-        meta.paxos_metadata.set_drop = 0;
-
     }
 
     action handle_2a() {
@@ -34,7 +34,6 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         registerRound.write(hdr.paxos.inst, hdr.paxos.rnd);
         registerVRound.write(hdr.paxos.inst, hdr.paxos.rnd);
         registerValue.write(hdr.paxos.inst, hdr.paxos.paxosval);
-        meta.paxos_metadata.set_drop = 0;
     }
 
     table acceptor_tbl {
@@ -48,13 +47,19 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         default_action = _drop();
     }
 
-    action forward(PortId port, bit<16> learnerPort) {
+    action forward(PortId port, bit<48> mac_dst, bit<32> ip_dst, bit<16> udp_dst) {
         standard_metadata.egress_spec = port;
-        hdr.udp.dstPort = learnerPort;
+        hdr.ethernet.dstAddr = mac_dst;
+        // Set MAC destinate to learners
+        hdr.ethernet.dstAddr = mac_dst;
+        // Set IP destinate to learners
+        hdr.ipv4.dstAddr = ip_dst;
+        // Set UDP destinate to learners
+        hdr.udp.dstPort = udp_dst;
     }
 
     table transport_tbl {
-        key = { meta.paxos_metadata.set_drop : exact; }
+        key = { hdr.ipv4.dstAddr : exact; }
         actions = {
             _drop;
              forward;
@@ -63,14 +68,22 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         default_action =  _drop();
     }
 
+    #include "arp.p4"
+    #include "icmp.p4"
+
     apply {
-        if (hdr.ipv4.isValid()) {
+        if (hdr.arp.isValid()) {
+            arp_tbl.apply();
+        }
+        else if (hdr.ipv4.isValid()) {
             if (hdr.paxos.isValid()) {
                 read_round();
                 if (hdr.paxos.rnd >= meta.paxos_metadata.round) {
                     acceptor_tbl.apply();
                     transport_tbl.apply();
                 }
+            } else if (hdr.icmp.isValid()) {
+                icmp_tbl.apply();
             }
         }
     }

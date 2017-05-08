@@ -3,6 +3,8 @@
 
 
 #define ETHERTYPE_IPV4 16w0x0800
+#define ETHERTYPE_ARP 16w0x0806
+#define ICMP_PROTOCOL 8w0x1
 #define UDP_PROTOCOL 8w0x11
 #define PAXOS_PROTOCOL 16w0x8888
 
@@ -14,16 +16,28 @@ parser TopParser(packet_in b, out headers p, inout metadata meta, inout standard
     state parse_ethernet {
         b.extract(p.ethernet);
         transition select(p.ethernet.etherType) {
+            ETHERTYPE_ARP : parse_arp;
             ETHERTYPE_IPV4 : parse_ipv4;
         }
+    }
+
+    state parse_arp {
+        b.extract(p.arp);
+        transition accept;
     }
 
     state parse_ipv4 {
         b.extract(p.ipv4);
         transition select(p.ipv4.protocol) {
+            ICMP_PROTOCOL : parse_icmp;
             UDP_PROTOCOL : parse_udp;
             default : accept;
         }
+    }
+
+    state parse_icmp {
+        b.extract(p.icmp);
+        transition accept;
     }
 
     state parse_udp {
@@ -43,7 +57,9 @@ parser TopParser(packet_in b, out headers p, inout metadata meta, inout standard
 control TopDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.ethernet);
+        packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
+        packet.emit(hdr.icmp);
         packet.emit(hdr.udp);
         packet.emit(hdr.paxos);
     }

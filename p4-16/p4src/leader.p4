@@ -1,27 +1,41 @@
 #include <core.p4>
-#include <v1model.p4>
+#include "SimpleSumeSwitch.p4"
 #include "includes/header.p4"
-#include "includes/parser.p4"
+#include "includes/sume_parser.p4"
 
-control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
-    register<bit<INSTANCE_SIZE>>(1) registerInstance;
+#define REG_READ 8w0
+#define REG_WRITE 8w0
+
+extern void mark_to_drop();
+extern void ctrlInstane_reg_rw(in bit<1> index, in bit<32> newVal, in bit<8> opCode, out bit<32> result);
+
+control TopPipe(inout headers hdr,
+                inout paxos_metadata_t user_metadata,
+                inout sume_metadata_t sume_metadata) {
 
     action _drop() {
         mark_to_drop();
     }
 
     action increase_instance() {
-        registerInstance.read(hdr.paxos.inst, 0);
-        hdr.paxos.inst = hdr.paxos.inst + 1;
-        registerInstance.write(0, hdr.paxos.inst);
-        meta.paxos_metadata.set_drop = 0;
-
+        bit<1> index = 1w0;
+        bit<32> current_instance = 32w0;
+        bit<32> dont_care = 1w0;
+        ctrlInstane_reg_rw(index, dont_care, REG_READ, current_instance);
+        hdr.paxos.inst = current_instance;
+        current_instance = current_instance + 1;
+        ctrlInstane_reg_rw(index, current_instance, REG_WRITE, dont_care);
+        user_metadata.set_drop = 0;
     }
 
     action reset_instance() {
-        registerInstance.write(0, 0);
+        bit<1> index = 1w0;
+        bit<32> reset_value = 32w0;
+        bit<32> dont_care = 1w0;
+        ctrlInstane_reg_rw(index, reset_value, REG_WRITE, dont_care);
+
         // Do not need to forward this message
-        meta.paxos_metadata.set_drop = 1;
+        user_metadata.set_drop = 1;
     }
 
     table leader_tbl {
@@ -37,12 +51,12 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
 
 
     action forward(PortId port, bit<16> acceptorPort) {
-        standard_metadata.egress_spec = port;
+        sume_metadata.dst_port = port;
         hdr.udp.dstPort = acceptorPort;
     }
 
     table transport_tbl {
-        key = { meta.paxos_metadata.set_drop : exact; }
+        key = { user_metadata.set_drop : exact; }
         actions = {
             _drop;
              forward;
@@ -61,17 +75,4 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
     }
 }
 
-control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t standard_metadata) {
-    table place_holder_table {
-        actions = {
-            NoAction;
-        }
-        size = 2;
-        default_action = NoAction();
-    }
-    apply {
-        place_holder_table.apply();
-    }
-}
-
-V1Switch(TopParser(), verifyChecksum(), ingress(), egress(), computeChecksum(), TopDeparser()) main;
+SimpleSumeSwitch(TopParser(), TopPipe(), TopDeparser()) main;

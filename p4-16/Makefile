@@ -1,5 +1,6 @@
 BMV2_PATH=/home/bmv2
-P4C=/home/p4c/build/p4c-bm2-ss
+# P4C=/home/p4c/build/p4c-bm2-ss
+P4C=/home/p4c/build/p4test
 # P4C=/home/p4c-bm/p4c_bm/__main__.py
 SWITCH_PATH=$(BMV2_PATH)/targets/simple_switch/simple_switch
 CLI_PATH=$(BMV2_PATH)/tools/runtime_CLI.py

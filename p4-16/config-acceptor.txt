@@ -1,5 +1,10 @@
-table_add transport_tbl set_UDPdstPort 0 => 34954
-table_add forward_tbl forward 0 => 1
+table_add arp_tbl handle_arp_request 1 =>
+table_add arp_tbl handle_arp_reply 2 =>
+table_add icmp_tbl handle_icmp_request 8 =>
+table_add icmp_tbl handle_icmp_reply 0 =>
+table_add transport_tbl forward 0xe0031d49 => 1 18838586676582 0xe0031d51 34954
 table_add acceptor_tbl handle_1a 0 =>
 table_add acceptor_tbl handle_2a 2 =>
 register_write registerAcceptorID 0 1
+register_write my_mac_address 0 18838586676582
+register_write my_ip_address 0 3232236641
