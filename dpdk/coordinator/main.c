@@ -26,8 +26,13 @@
 #include "utils.h"
 #include "const.h"
 
+extern struct {
+    uint64_t total_cycles;
+    uint64_t total_pkts;
+} latency_numbers;
 
-#define BURST_TX_DRAIN_NS 10 /* TX drain every ~100ns */
+
+#define BURST_TX_DRAIN_NS 100 /* TX drain every ~100ns */
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {.max_rx_pkt_len = ETHER_MAX_LEN}
@@ -63,7 +68,12 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
 	int nb_tx = rte_atomic32_read(&tx_counter);
 	int nb_rx = rte_atomic32_read(&rx_counter);
-	PRINT_INFO ("Throughput: tx %8d, rx %8d", nb_tx, nb_rx);
+    uint64_t avg_cycles = 0;
+    if (latency_numbers.total_cycles > 0)
+        avg_cycles = latency_numbers.total_cycles / latency_numbers.total_pkts;
+    PRINT_INFO("Throughput: tx %8d, rx %8d, avg_cycles: %"PRIu64"", nb_tx, nb_rx, avg_cycles);
+    latency_numbers.total_cycles = 0;
+    latency_numbers.total_pkts = 0;
 	rte_atomic32_set(&rx_counter, 0);
 	rte_atomic32_set(&tx_counter, 0);
 	if(force_quit)
@@ -130,7 +140,7 @@ paxos_rx_process(uint8_t port, struct rte_mbuf *pkt, struct coordinator *coord)
 		return -1;
 
 	ip_h = (struct ipv4_hdr*) ((char *)eth_h + l2_len);
-	if(rte_get_log_level() == RTE_LOG_DEBUG)
+	if(rte_log_get_global_level() == RTE_LOG_DEBUG)
 		rte_hexdump(stdout, "ip", ip_h, sizeof(struct ipv4_hdr));
 
 	if(ip_h->next_proto_id == IPPROTO_ICMP)
@@ -156,14 +166,14 @@ paxos_rx_process(uint8_t port, struct rte_mbuf *pkt, struct coordinator *coord)
 
 		udp_h = (struct udp_hdr *)((char *)ip_h + l3_len);
 
-		if(rte_get_log_level() == RTE_LOG_DEBUG)
+		if(rte_log_get_global_level() == RTE_LOG_DEBUG)
 			rte_hexdump(stdout, "udp", udp_h, sizeof(struct udp_hdr));
 		if (udp_h->dst_port != rte_cpu_to_be_16(COORDINATOR_PORT) &&
 										(pkt->packet_type & RTE_PTYPE_TUNNEL_MASK) == 0)
 			return -1;
 		paxos_h = (struct paxos_hdr*) ((char*)udp_h + sizeof(struct udp_hdr));
 
-		if (rte_get_log_level() == RTE_LOG_DEBUG) {
+		if (rte_log_get_global_level() == RTE_LOG_DEBUG) {
 			rte_hexdump(stdout, "paxos", paxos_h, sizeof(struct paxos_hdr));
 			print_paxos_hdr(paxos_h);
 		}
@@ -244,7 +254,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct coordinator* coord
 		if(retval < 0)
 			return retval;
 	}
- d	/*transmit rings for ethernet port*/
+	/*transmit rings for ethernet port*/
 	for (q = 0; q < tx_rings; q++)
 	{
 		retval = rte_eth_tx_queue_setup(port, q, TX_RING_SIZE,

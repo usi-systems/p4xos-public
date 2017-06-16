@@ -18,15 +18,19 @@ void parse_args(int argc, char **argv)
         int opt;
         const char *prgname = argv[0];
         client_config.period = 5;
+        client_config.outstanding = 1;
         /* Disable printing messages within getopt() */
         /* Parse command line */
-        while ((opt = getopt(argc, argv, "t:p:")) != EOF) {
+        while ((opt = getopt(argc, argv, "t:p:o:")) != EOF) {
                 switch (opt) {
                 case 't':
                         client_config.test = atoi(optarg);
                         break;
                 case 'p':
                         client_config.period = atoi(optarg);
+                        break;
+                case 'o':
+                        client_config.outstanding = atoi(optarg);
                         break;
                 default:
                         print_usage(prgname);

@@ -41,6 +41,10 @@ static const struct rte_eth_conf port_conf_default = {
 	.rxmode = { .max_rx_pkt_len = ETHER_MAX_LEN, },
 };
 
+extern struct {
+    uint64_t total_cycles;
+    uint64_t total_pkts;
+} latency_numbers;
 
 static const struct ether_addr ether_multicast = {
 	.addr_bytes= { 0x01, 0x1b, 0x19, 0x0, 0x0, 0x0 }
@@ -95,7 +99,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
     int l4_len = sizeof(struct udp_hdr);
 
     struct ipv4_hdr *iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
-    if (rte_get_log_level() == RTE_LOG_DEBUG)
+    if (rte_log_get_global_level() == RTE_LOG_DEBUG)
         rte_hexdump(stdout, "ip", iph, sizeof(struct ipv4_hdr));
 
     if (iph->next_proto_id != IPPROTO_UDP)
@@ -103,7 +107,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 
     udp_hdr = (struct udp_hdr *)((char *)iph + l3_len);
 
-    if (rte_get_log_level() == RTE_LOG_DEBUG)
+    if (rte_log_get_global_level() == RTE_LOG_DEBUG)
         rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
 
     if (udp_hdr->dst_port != rte_cpu_to_be_16(ACCEPTOR_PORT) &&
@@ -112,7 +116,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct acceptor* acceptor)
 
     paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + l4_len);
 
-	if (rte_get_log_level() == RTE_LOG_DEBUG)
+	if (rte_log_get_global_level() == RTE_LOG_DEBUG)
         rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
 
     int value_len = rte_be_to_cpu_32(paxos_hdr->value_len);
@@ -312,9 +316,14 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
     PRINT_DEBUG("%s on core %d", __func__, rte_lcore_id());
     int nb_tx = rte_atomic32_read(&tx_counter);
     int nb_rx = rte_atomic32_read(&rx_counter);
-    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
+    uint64_t avg_cycles = 0;
+    if (latency_numbers.total_cycles > 0)
+        avg_cycles = latency_numbers.total_cycles / latency_numbers.total_pkts;
+    PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d, avg_cycles: %"PRIu64"", nb_tx, nb_rx, dropped, avg_cycles);
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
+    latency_numbers.total_cycles = 0;
+    latency_numbers.total_pkts = 0;
     dropped = 0;
     if (force_quit)
         rte_timer_stop(tim);

@@ -33,7 +33,7 @@
 
 #define NS_PER_S 1000000000
 
-#define BURST_TX_DRAIN_US 1
+#define BURST_TX_DRAIN_NS 100
 #define FAKE_ADDR IPv4(192,168,4,198)
 
 struct dp_learner {
@@ -49,6 +49,8 @@ struct dp_learner {
     struct rte_eth_dev_tx_buffer *tx_buffer;
     struct rte_mbuf *tx_mbufs[BURST_SIZE];
 };
+
+
 
 // Mac address of eth0 node95
 static const struct ether_addr mac95 = {
@@ -72,11 +74,13 @@ static const struct ether_addr mac98 = {
 
 static rte_atomic32_t tx_counter = RTE_ATOMIC32_INIT(0);
 static rte_atomic32_t rx_counter = RTE_ATOMIC32_INIT(0);
+static rte_atomic64_t tot_cycles = RTE_ATOMIC64_INIT(0);
 
 static rte_atomic32_t consensus_counter = RTE_ATOMIC32_INIT(0);
 
 static uint32_t at_second;
 static uint32_t dropped;
+static uint64_t sample_cycle;
 
 #ifdef ORDER_DELIVERY
 	/* learner timer for deliver */
@@ -159,11 +163,11 @@ dp_learner_send(struct dp_learner* dl,
     pkt->pkt_len = l2_len + l3_len + l4_len + size;
 	pkt->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM | PKT_TX_UDP_CKSUM;
 	udp_hdr->dgram_cksum = get_psd_sum(iph, ETHER_TYPE_IPv4, pkt->ol_flags);
-     //    int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
-    int nb_tx = rte_eth_tx_burst(0, 0, &pkt, 1);
-
-	if (nb_tx)
+    int nb_tx = rte_eth_tx_buffer(0, 0, dl->tx_buffer, pkt);
+	if (nb_tx) {
         reset_tx_mbufs(dl, nb_tx);
+        rte_atomic32_add(&tx_counter, nb_tx);
+    }
 
 	return 0;
 }
@@ -227,7 +231,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
     // int l4_len = sizeof(struct udp_hdr);
 
     struct ipv4_hdr *iph = (struct ipv4_hdr *) ((char *)phdr + l2_len);
-    if (rte_get_log_level() == RTE_LOG_DEBUG)
+    if (rte_log_get_global_level() == RTE_LOG_DEBUG)
         rte_hexdump(stdout, "ip", iph, sizeof(struct ipv4_hdr));
 
     if (iph->next_proto_id != IPPROTO_UDP)
@@ -241,7 +245,7 @@ paxos_rx_process(struct rte_mbuf *pkt, struct dp_learner* dl)
 
 	paxos_hdr = (struct paxos_hdr *)((char *)udp_hdr + sizeof(struct udp_hdr));
 
-	if (rte_get_log_level() == RTE_LOG_DEBUG) {
+	if (rte_log_get_global_level() == RTE_LOG_DEBUG) {
 		rte_hexdump(stdout, "udp", udp_hdr, sizeof(struct udp_hdr));
 		rte_hexdump(stdout, "paxos", paxos_hdr, sizeof(struct paxos_hdr));
 		print_paxos_hdr(paxos_hdr);
@@ -296,13 +300,33 @@ add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts,
         uint16_t max_pkts __rte_unused, void *user_param)
 {
+    uint64_t now = rte_rdtsc();
     struct dp_learner* dl = (struct dp_learner *)user_param;
     unsigned i;
     for (i = 0; i < nb_pkts; i++) {
         paxos_rx_process(pkts[i], dl);
+        pkts[i]->udata64 = now;
     }
     return nb_pkts;
 }
+
+static uint16_t
+calc_cycles(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+        struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
+{
+    uint64_t cycles = 0;
+    uint64_t now = rte_rdtsc();
+    unsigned i;
+
+    for (i = 0; i < nb_pkts; i++) {
+        cycles += now - pkts[i]->udata64;
+    }
+
+    rte_atomic64_add(&tot_cycles, cycles);
+
+    return nb_pkts;
+}
+
 
 static inline int
 port_init(uint8_t port, void* user_param)
@@ -352,7 +376,7 @@ port_init(uint8_t port, void* user_param)
 
 	rte_eth_add_rx_callback(port, 0, add_timestamps, user_param);
     /* Disable calculate processing latency */
-	// rte_eth_add_tx_callback(port, 0, calc_latency, user_param);
+	rte_eth_add_tx_callback(port, 0, calc_cycles, user_param);
 	return 0;
 }
 
@@ -362,7 +386,7 @@ lcore_main(uint8_t port, struct dp_learner* dl)
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
     const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
-            BURST_TX_DRAIN_US;
+            BURST_TX_DRAIN_NS;
 
     prev_tsc = 0;
 
@@ -413,6 +437,7 @@ check_deliver(struct rte_timer *tim,
 		rte_timer_stop(tim);
 }
 
+
 static void
 report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
 {
@@ -420,10 +445,18 @@ report_stat(struct rte_timer *tim, __attribute((unused)) void *arg)
     int nb_consensus = rte_atomic32_read(&consensus_counter);
     //int nb_rx = rte_atomic32_read(&rx_counter);
     //PRINT_INFO("Throughput: tx %8d, rx %8d, drop %8d", nb_tx, nb_rx, dropped);
-    printf("%2d %8d\n", at_second++, nb_consensus);
+    uint64_t avg_cycles = rte_atomic64_read(&tot_cycles);
+    if (avg_cycles > 0)
+        avg_cycles /= nb_consensus;
+
+    printf("%2d %8d, " "avg. latency = %"PRIu64" cycles, sample: %"PRIu64" cycles\n",
+         at_second++, nb_consensus, avg_cycles, sample_cycle);
+
     rte_atomic32_set(&consensus_counter, 0);
     rte_atomic32_set(&tx_counter, 0);
     rte_atomic32_set(&rx_counter, 0);
+    rte_atomic64_set(&tot_cycles, 0);
+
     dropped = 0;
     if (force_quit)
         rte_timer_stop(tim);
@@ -471,7 +504,7 @@ main(int argc, char *argv[])
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
-	if (rte_get_log_level() == RTE_LOG_DEBUG) {
+	if (rte_log_get_global_level() == RTE_LOG_DEBUG) {
 		paxos_config.verbosity = PAXOS_LOG_DEBUG;
 	}
 

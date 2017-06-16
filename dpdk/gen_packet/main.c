@@ -82,7 +82,7 @@ static struct rte_eth_dev_tx_buffer *tx_buffer;
 
 static void
 generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
-    struct rte_eth_dev_tx_buffer *buffer, enum PAXOS_TEST t, int cur_inst)
+    struct rte_eth_dev_tx_buffer *buffer, enum PAXOS_TEST t, uint32_t* cur_inst)
 {
     uint16_t dport;
     switch(t) {
@@ -115,10 +115,11 @@ generate_packets(struct rte_mbuf **pkts_burst, unsigned nb_tx,
     pm.u.accept = accept;
 	unsigned i;
 	for (i = 0; i < nb_tx; i++) {
-        pm.u.accept.iid = cur_inst;
-        add_paxos_message(&pm, pkts_burst[i], 12345, dport);
+        pm.u.accept.iid = *cur_inst;
+        add_paxos_message(&pm, pkts_burst[i], 12345, dport, LEARNER_ADDR);
         rte_eth_tx_buffer(0, 0, buffer, pkts_burst[i]);
-        PRINT_DEBUG("submit instance %u", cur_inst);
+        PRINT_DEBUG("submit instance %u", *cur_inst);
+        (*cur_inst)++;
     }
 }
 
@@ -127,26 +128,26 @@ send_packets(struct client *client, struct rte_eth_dev_tx_buffer *buffer, int nb
 {
     struct rte_mbuf *bufs[nb_tx];
     rte_pktmbuf_alloc_bulk(client->mbuf_pool, bufs, nb_tx);
-    generate_packets(bufs, nb_tx, buffer, client->test, client->cur_inst);
+    generate_packets(bufs, nb_tx, buffer, client->test, &(client->cur_inst));
 }
 
-static void
-gen_timer_callback(struct rte_timer *tim, void *arg)
-{
-    struct client* client = (struct client*) arg;
-    send_packets(client, tx_buffer, 1);
-    if (force_quit)
-        rte_timer_stop(tim);
-}
+// static void
+// gen_timer_callback(struct rte_timer *tim, void *arg)
+// {
+//     struct client* client = (struct client*) arg;
+//     send_packets(client, tx_buffer, 1);
+//     if (force_quit)
+//         rte_timer_stop(tim);
+// }
 
-static int
+static int __rte_unused
 hexdump_paxos_hdr(struct rte_mbuf *created_pkt)
 {
     size_t paxos_offset = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
                         sizeof(struct udp_hdr);
     struct paxos_hdr *px = rte_pktmbuf_mtod_offset(created_pkt,
                                 struct paxos_hdr *, paxos_offset);
-    if (rte_get_log_level() == RTE_LOG_DEBUG)
+    if (rte_log_get_global_level() == RTE_LOG_DEBUG)
         rte_hexdump(stdout, "paxos", px, sizeof(struct paxos_hdr));
 }
 
@@ -156,13 +157,16 @@ check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
         struct rte_mbuf **pkts, uint16_t nb_pkts,
         uint16_t max_pkts __rte_unused, void *user_param __rte_unused)
 {
+    struct client *client = (struct client *)user_param;
+
     uint64_t cycles = 0;
     uint64_t now = rte_rdtsc();
     unsigned i;
 
     for (i = 0; i < nb_pkts; i++) {
         cycles += now - pkts[i]->udata64;
-        hexdump_paxos_hdr(pkts[i]);
+        // hexdump_paxos_hdr(pkts[i]);
+        send_packets(client, tx_buffer, nb_pkts);
     }
 
     return nb_pkts;
@@ -174,7 +178,7 @@ check_return(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
  * coming from the mbuf_pool passed as a parameter.
  */
 static inline int
-port_init(uint8_t port, struct rte_mempool *mbuf_pool)
+port_init(uint8_t port, struct rte_mempool *mbuf_pool, struct client *client)
 {
     struct rte_eth_conf port_conf = port_conf_default;
     const uint16_t rx_rings = 1, tx_rings = 1;
@@ -219,7 +223,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
     /* Enable RX in promiscuous mode for the Ethernet device. */
     rte_eth_promiscuous_enable(port);
 
-    rte_eth_add_rx_callback(port, 0, check_return, NULL);
+    rte_eth_add_rx_callback(port, 0, check_return, client);
 
     return 0;
 }
@@ -228,7 +232,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
  * an input port and writing to an output port.
  */
 static void
-lcore_main(uint8_t port)
+lcore_main(uint8_t port, struct client* client, int outstanding)
 {
     struct rte_mbuf *pkts_burst[BURST_SIZE];
     uint64_t prev_tsc, diff_tsc, cur_tsc;
@@ -237,6 +241,8 @@ lcore_main(uint8_t port)
             BURST_TX_DRAIN_US;
 
     prev_tsc = 0;
+
+    send_packets(client, tx_buffer, outstanding);
 
     /* Run until the application is quit or killed. */
     while (!force_quit) {
@@ -324,7 +330,7 @@ main(int argc, char *argv[])
     rte_eth_tx_buffer_init(tx_buffer, BURST_SIZE);
 
     /* Initialize port 0. */
-    if (port_init(portid, client.mbuf_pool) != 0)
+    if (port_init(portid, client.mbuf_pool, &client) != 0)
             rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n", portid);
 
     /* display stats every period seconds */
@@ -333,14 +339,14 @@ main(int argc, char *argv[])
     rte_timer_reset(&timer, period*hz, PERIODICAL, lcore_id, report_stat, &period);
     rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
-    lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
-    rte_timer_reset(&gen_timer, period*hz, PERIODICAL, lcore_id,
-                        gen_timer_callback, &client);
-    rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
+    // lcore_id = rte_get_next_lcore(rte_lcore_id(), 0, 1);
+    // rte_timer_reset(&gen_timer, period*hz, SINGLE, lcore_id,
+    //                     gen_timer_callback, &client);
+    // rte_eal_remote_launch(check_timer_expiration, NULL, lcore_id);
 
 	rte_timer_subsystem_init();
 
     /* Call lcore_main on the master core only. */
-    lcore_main(portid);
+    lcore_main(portid, &client, client_config.outstanding);
     return 0;
 }
