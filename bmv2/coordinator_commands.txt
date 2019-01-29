@@ -1,11 +1,9 @@
-table_set_default smac_table mac_learn
-table_set_default dmac_table broadcast 1
+table_set_default smac mac_learn
+table_set_default dmac broadcast
 table_set_default mcast_src_pruning _nop
-table_set_default sequence_tbl _nop
+table_set_default tbl_sequence _nop
 table_add mcast_src_pruning _drop 5 =>
-table_add sequence_tbl increase_instance 3 =>
+table_add tbl_sequence handle_request 3 =>
 mc_mgrp_create 1
 mc_node_create 0 1 2 3 4 5
 mc_node_associate 1 0
-table_set_default role_tbl read_role
-register_write role_register 0 1

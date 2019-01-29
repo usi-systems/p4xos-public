@@ -3,6 +3,8 @@
 #include "includes/paxos_headers.p4"
 #include "includes/paxos_parser.p4"
 
+#define INSTANCE_COUNT 65536
+
 header_type ingress_metadata_t {
     fields {
         round : ROUND_SIZE;
@@ -12,7 +14,7 @@ header_type ingress_metadata_t {
     }
 }
 
-metadata ingress_metadata_t local_metadata;
+metadata ingress_metadata_t paxos_packet_metadata;
 
 register rounds_register {
     width : ROUND_SIZE;
@@ -43,12 +45,12 @@ action _drop() {
 // (i.e., paxos instance number) is read from the current packet. Could be
 // problematic if the instance exceeds the bounds of the register.
 action read_round() {
-    register_read(local_metadata.round, rounds_register, paxos.inst);
-    modify_field(local_metadata.set_drop, 1);
-    register_read(local_metadata.acceptors, history2B, paxos.inst);
+    register_read(paxos_packet_metadata.round, rounds_register, paxos.instance);
+    modify_field(paxos_packet_metadata.set_drop, 1);
+    register_read(paxos_packet_metadata.acceptors, history2B, paxos.instance);
 }
 
-table round_tbl {
+table tbl_rnd {
     actions { read_round; }
     size : 1;
 }
@@ -56,17 +58,17 @@ table round_tbl {
 // Receive Paxos 2A message, send Paxos 2B message
 action handle_2b() {
     // TODO: the 2 lines below only needed for the first time
-    register_write(rounds_register, paxos.inst, paxos.rnd);
-    register_write(values_register, paxos.inst, paxos.paxosval);
+    register_write(rounds_register, paxos.instance, paxos.round);
+    register_write(values_register, paxos.instance, paxos.value);
     // Acknowledge accepted vote
-    modify_field(local_metadata.acceptors, local_metadata.acceptors | (1 << paxos.acptid));
-    register_write(history2B, paxos.inst, local_metadata.acceptors);
+    modify_field(paxos_packet_metadata.acceptors, paxos_packet_metadata.acceptors | (1 << paxos.acceptor));
+    register_write(history2B, paxos.instance, paxos_packet_metadata.acceptors);
 }
 
 action handle_new_value() {
-    register_write(rounds_register, paxos.inst, paxos.rnd);
-    register_write(values_register, paxos.inst, paxos.paxosval);
-    register_write(history2B, paxos.inst, 1 << paxos.acptid);
+    register_write(rounds_register, paxos.instance, paxos.round);
+    register_write(values_register, paxos.instance, paxos.value);
+    register_write(history2B, paxos.instance, 1 << paxos.acceptor);
 }
 
 table learner_tbl {
@@ -81,7 +83,7 @@ table reset_tbl {
 
 action forward(port) {
     modify_field(standard_metadata.egress_spec, port);
-    modify_field(local_metadata.set_drop, 0);
+    modify_field(paxos_packet_metadata.set_drop, 0);
 }
 
 table forward_tbl {
@@ -97,32 +99,29 @@ table forward_tbl {
 
 table drop_tbl {
     reads {
-        local_metadata.set_drop : exact;
+        paxos_packet_metadata.set_drop : exact;
     }
     actions { _drop; _nop; }
     size : 2;
 }
 
 control ingress {
-    if (valid(ipv4)) {
-
-        if (valid(paxos)) {
-            apply(round_tbl);
-            if (paxos.rnd > local_metadata.round) {
-                apply(reset_tbl);
-            }
-            else if (paxos.rnd == local_metadata.round) {
-                apply(learner_tbl);
-            }
-            // TODO: replace this with counting number of 1 in Binary
-            // e.g count_number_of_1_binary(local_metadata.acceptors) == MAJORITY
-            if (local_metadata.acceptors == 6       // 0b110
-                or local_metadata.acceptors == 5    // 0b101
-                or local_metadata.acceptors == 3)   // 0b011
-            {
-                // deliver the value
-                apply(forward_tbl);
-            }
+    if (valid(paxos)) {
+        apply(tbl_rnd);
+        if (paxos.round > paxos_packet_metadata.round) {
+            apply(reset_tbl);
+        }
+        else if (paxos.round == paxos_packet_metadata.round) {
+            apply(learner_tbl);
+        }
+        // TODO: replace this with counting number of 1 in Binary
+        // e.g count_number_of_1_binary(paxos_packet_metadata.acceptors) == MAJORITY
+        if (paxos_packet_metadata.acceptors == 6       // 0b110
+            or paxos_packet_metadata.acceptors == 5    // 0b101
+            or paxos_packet_metadata.acceptors == 3)   // 0b011
+        {
+            // deliver the value
+            apply(forward_tbl);
         }
     }
 }

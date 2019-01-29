@@ -37,4 +37,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     vb.memory = 2048
     vb.cpus = 2
  end
+
+ # Shared folder with host
+ config.vm.synced_folder "..", "/home/vagrant/p4xos-public"
 end

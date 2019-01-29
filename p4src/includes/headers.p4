@@ -13,21 +13,6 @@ header_type ethernet_t {
 
 header ethernet_t ethernet;
 
-header_type arp_t {
-    fields {
-        hrd : 16;
-        pro : 16;
-        hln : 8;
-        pln : 8;
-        op  : 16;
-        sha : 48;
-        spa : 32;
-        tha : 48;
-        tpa : 32;
-    }
-}
-header arp_t arp;
-
 header_type ipv4_t {
     fields {
         version : 4;
@@ -60,7 +45,7 @@ field_list ipv4_checksum_list {
         ipv4.srcAddr;
         ipv4.dstAddr;
 }
- 
+
 field_list_calculation ipv4_checksum {
     input {
         ipv4_checksum_list;
@@ -68,26 +53,10 @@ field_list_calculation ipv4_checksum {
     algorithm : csum16;
     output_width : 16;
 }
- 
+
 calculated_field ipv4.hdrChecksum  {
-    verify ipv4_checksum;
     update ipv4_checksum;
 }
-
-header_type ipv6_t {
-    fields {
-        version : 4;
-        trafficClass : 8;
-        flowLabel : 20;
-        payloadLen : 16;
-        nextHdr : 8;
-        hopLimit : 8;
-        srcAddr : 128;
-        dstAddr : 128;
-    }
-}
-
-header ipv6_t ipv6;
 
 header_type udp_t {
     fields {
@@ -99,6 +68,7 @@ header_type udp_t {
 }
 
 header udp_t udp;
+
 
 field_list udp_checksum_list {
     ipv4.srcAddr;
@@ -112,15 +82,17 @@ field_list udp_checksum_list {
     payload;
 }
 
-header_type igmp_t {
-    fields {
-        msgtype : 8;
-        max_resp : 8;
-        checksum : 16;
-        grp_addr : 32;
+field_list_calculation udp_checksum {
+    input {
+        udp_checksum_list;
     }
+    algorithm : csum16;
+    output_width : 16;
 }
 
-header igmp_t igmp;
+calculated_field udp.checksum {
+    update udp_checksum if (valid(udp));
+}
+
 
 #endif
