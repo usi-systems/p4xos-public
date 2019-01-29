@@ -9,3 +9,4 @@ tests/
 test_app/build
 *DS_Store
 *.o*
+.vagrant/
