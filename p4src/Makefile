@@ -4,13 +4,7 @@ SWITCH_PATH=$($BMV2_PATH)/targets/simple_switch/simple_switch
 CLI_PATH=$(BMV2_PATH)/tools/runtime_CLI.py
 PROG=learner
 
-all:
-	echo "Making coordinator"
-	coordinator
-	echo "Making acceptor"
-	acceptor
-	echo "Making learner"
-	learner
+all: coordinator acceptor learner
 
 coordinator:
 	$(P4C) --json coordinator.json ./coordinator.p4
